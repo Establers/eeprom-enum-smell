@@ -1,6 +1,7 @@
 import html
 import datetime
 import os
+import json
 from typing import List, Dict
 
 def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.'):
@@ -13,263 +14,436 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
     total_enums = sum(r['enum_count'] for r in results)
     enum_name_esc = html.escape(enum_name)
 
-    html_head = f"""
+    # 차트 데이터 준비
+    file_data = {}
+    for r in results:
+        if r['file'] not in file_data:
+            file_data[r['file']] = 0
+        file_data[r['file']] += r['enum_count']
+    
+    chart_data = {
+        'files': list(file_data.keys()),
+        'counts': list(file_data.values())
+    }
+
+    # JavaScript에서 사용할 데이터를 JSON으로 변환
+    chart_data_json = json.dumps(chart_data)
+    results_json = json.dumps([{
+        'func_name': r['func_name'],
+        'enum_count': r['enum_count']
+    } for r in results])
+
+    # 테이블 행 HTML 생성
+    table_rows = []
+    for i, r in enumerate(results):
+        row = f"""
+        <tr>
+            <td title="{html.escape(str(r['file']))}">{html.escape(str(r['file']))}</td>
+            <td title="{html.escape(str(r['func_name']))}">{html.escape(str(r['func_name']))}</td>
+            <td>{html.escape(str(r['enum_count']))}</td>
+            <td><button class="btn" onclick="toggleCode({i})">보기</button></td>
+        </tr>
+        <tr id="code_{i}" class="code-row" style="display:none">
+            <td colspan="4">
+                <div class="code-container">
+                    <div class="code-preview">
+                        <pre><code class="language-c">{html.escape(r['code'])}</code></pre>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        """
+        table_rows.append(row)
+
+    html_content = f"""
     <!DOCTYPE html>
     <html lang='ko'>
     <head>
-      <meta charset='utf-8'>
-      <title>{enum_name_esc} 분석 보고서</title>
-      <meta name='viewport' content='width=device-width, initial-scale=1'>
-      <style>
-        body {{
-          font-family: 'Segoe UI', 'Malgun Gothic', Arial, sans-serif;
-          background: var(--bg, #f7f7fa);
-          color: var(--fg, #222);
-          margin: 0;
-          padding: 0;
-        }}
-        .container {{
-          max-width: 1100px;
-          margin: 40px auto 40px auto;
-          background: var(--panel, #fff);
-          border-radius: 16px;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-          padding: 32px 32px 24px 32px;
-        }}
-        h1 {{
-          margin-top: 0;
-          font-size: 2.2em;
-          letter-spacing: -1px;
-        }}
-        .summary-list {{
-          list-style: none;
-          padding: 0;
-          margin: 0 0 24px 0;
-          display: flex;
-          gap: 32px;
-        }}
-        .summary-list li {{
-          font-size: 1.1em;
-          background: var(--chip, #e9e9f3);
-          border-radius: 8px;
-          padding: 8px 18px;
-          display: inline-block;
-        }}
-        .toolbar {{
-          display: flex;
-          gap: 16px;
-          margin-bottom: 18px;
-          align-items: center;
-        }}
-        .toolbar input[type='text'] {{
-          font-size: 1em;
-          padding: 6px 12px;
-          border-radius: 6px;
-          border: 1px solid #bbb;
-          width: 220px;
-        }}
-        .toolbar button {{
-          background: #222;
-          color: #fff;
-          border: none;
-          border-radius: 6px;
-          padding: 7px 18px;
-          font-size: 1em;
-          cursor: pointer;
-          transition: background 0.2s;
-        }}
-        .toolbar button:hover {{
-          background: #444;
-        }}
-        .toolbar .dark-toggle {{
-          background: #fff;
-          color: #222;
-          border: 1px solid #bbb;
-        }}
-        .toolbar .dark-toggle.active {{
-          background: #222;
-          color: #fff;
-        }}
-        table {{
-          width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 16px;
-          table-layout: fixed;
-        }}
-        th, td {{
-          padding: 10px 8px;
-          border-bottom: 1px solid #e0e0e0;
-          text-align: left;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }}
-        th {{
-          background: var(--chip, #e9e9f3);
-          cursor: pointer;
-          user-select: none;
-        }}
-        tr:hover {{
-          background: #f0f6ff;
-        }}
-        td:not(:last-child) {{
-          min-width: 120px;
-          max-width: 260px;
-        }}
-        td:last-child {{
-          width: 60%;
-          min-width: 200px;
-          white-space: normal;
-        }}
-        .code-preview {{
-          background: #181c24;
-          color: #e6e6e6;
-          border-radius: 8px;
-          padding: 10px;
-          font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
-          font-size: 0.98em;
-          max-height: 120px;
-          overflow: auto;
-          margin: 0;
-          display: none;
-        }}
-        .show-btn {{
-          background: #0078d7;
-          color: #fff;
-          border: none;
-          border-radius: 5px;
-          padding: 4px 12px;
-          font-size: 0.95em;
-          cursor: pointer;
-          margin-bottom: 2px;
-        }}
-        .show-btn:hover {{
-          background: #005fa3;
-        }}
-        :root[data-theme='dark'] {{
-          --bg: #181c24;
-          --fg: #e6e6e6;
-          --panel: #23293a;
-          --chip: #23293a;
-        }}
-      </style>
-      <script>
-        // 다크모드 토글
-        function toggleDarkMode(btn) {{
-          const root = document.documentElement;
-          const isDark = root.getAttribute('data-theme') === 'dark';
-          if (isDark) {{
-            root.removeAttribute('data-theme');
-            btn.classList.remove('active');
-            localStorage.setItem('eep_dark', '0');
-          }} else {{
-            root.setAttribute('data-theme', 'dark');
-            btn.classList.add('active');
-            localStorage.setItem('eep_dark', '1');
-          }}
-        }}
-        window.onload = function() {{
-          // 다크모드 상태 복원
-          if (localStorage.getItem('eep_dark') === '1') {{
-            document.documentElement.setAttribute('data-theme', 'dark');
-            document.getElementById('darkBtn').classList.add('active');
-          }}
-        }}
-        // 코드 미리보기 토글
-        function toggleCode(idx) {{
-          var el = document.getElementById('code_' + idx);
-          if (el.style.display === 'block') {{
-            el.style.display = 'none';
-          }} else {{
-            el.style.display = 'block';
-          }}
-        }}
-        // 테이블 정렬
-        function sortTable(n) {{
-          var table = document.getElementById('resultTable');
-          var rows = Array.from(table.rows).slice(1);
-          var asc = table.getAttribute('data-sort') !== 'col' + n + '_asc';
-          rows.sort(function(a, b) {{
-            var x = a.cells[n].innerText.toLowerCase();
-            var y = b.cells[n].innerText.toLowerCase();
-            if (!isNaN(x) && !isNaN(y)) {{ x = Number(x); y = Number(y); }}
-            return asc ? (x > y ? 1 : x < y ? -1 : 0) : (x < y ? 1 : x > y ? -1 : 0);
-          }});
-          for (var i = 0; i < rows.length; i++) table.tBodies[0].appendChild(rows[i]);
-          table.setAttribute('data-sort', 'col' + n + (asc ? '_asc' : '_desc'));
-        }}
-        // 검색/필터
-        function filterTable() {{
-          var input = document.getElementById('searchInput').value.toLowerCase();
-          var table = document.getElementById('resultTable');
-          var rows = table.getElementsByTagName('tr');
-          for (var i = 1; i < rows.length; i++) {{
-            var show = false;
-            for (var j = 0; j < 4; j++) {{
-              if (rows[i].cells[j].innerText.toLowerCase().indexOf(input) > -1) show = true;
+        <meta charset='utf-8'>
+        <title>{enum_name_esc} 분석 보고서</title>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+        <style>
+            :root {{
+                --primary: #0078d7;
+                --bg: #f7f7fa;
+                --fg: #222;
+                --panel: #fff;
+                --border: #e0e0e0;
+                --hover: #f0f6ff;
             }}
-            rows[i].style.display = show ? '' : 'none';
-          }}
-        }}
-      </script>
+            
+            body {{
+                font-family: 'Segoe UI', 'Malgun Gothic', Arial, sans-serif;
+                background: var(--bg);
+                color: var(--fg);
+                margin: 0;
+                padding: 20px;
+                line-height: 1.5;
+            }}
+            
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+            }}
+
+            .header {{
+                background: var(--panel);
+                padding: 24px;
+                border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                margin-bottom: 20px;
+            }}
+
+            h1 {{
+                margin: 0;
+                font-size: 1.8em;
+                color: var(--fg);
+            }}
+
+            .stats {{
+                display: flex;
+                gap: 20px;
+                margin-top: 20px;
+            }}
+
+            .stat-item {{
+                background: var(--bg);
+                padding: 12px 20px;
+                border-radius: 8px;
+                flex: 1;
+            }}
+
+            .stat-label {{
+                font-size: 0.9em;
+                color: #666;
+            }}
+
+            .stat-value {{
+                font-size: 1.4em;
+                font-weight: bold;
+                color: var(--primary);
+                margin-top: 4px;
+            }}
+
+            .content-grid {{
+                display: grid;
+                grid-template-columns: 350px 1fr;
+                gap: 20px;
+                align-items: start;
+            }}
+
+            .chart-container {{
+                background: var(--panel);
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            }}
+
+            .chart-title {{
+                font-size: 1.1em;
+                color: var(--fg);
+                margin-bottom: 15px;
+                text-align: center;
+            }}
+
+            .table-container {{
+                background: var(--panel);
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                overflow-x: auto;
+            }}
+
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }}
+
+            th, td {{
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid var(--border);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+
+            td:first-child, td:nth-child(2) {{
+                max-width: 200px;
+            }}
+
+            .code-preview {{
+                position: relative;
+                margin: 0;
+                font-family: 'Fira Code', 'Consolas', 'Menlo', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                background: #1e1e1e;
+                border-radius: 4px;
+                overflow: auto;
+            }}
+
+            .code-preview pre {{
+                margin: 0;
+                padding: 15px;
+            }}
+
+            .code-preview code {{
+                font-family: inherit;
+                white-space: pre;
+                word-break: normal;
+                word-wrap: normal;
+            }}
+
+            .code-row {{
+                background: var(--bg);
+            }}
+
+            .code-row > td {{
+                padding: 0;
+            }}
+
+            .code-container {{
+                position: relative;
+                margin: 10px;
+            }}
+
+            @media (max-width: 1200px) {{
+                .content-grid {{
+                    grid-template-columns: 1fr;
+                }}
+                
+                .chart-container {{
+                    max-width: 400px;
+                    margin: 0 auto;
+                }}
+            }}
+
+            [data-theme="dark"] .code-preview {{
+                background: #1e1e1e;
+            }}
+
+            .token.comment {{
+                color: #6a9955;
+            }}
+            .token.function {{
+                color: #dcdcaa;
+            }}
+            .token.keyword {{
+                color: #569cd6;
+            }}
+            .token.string {{
+                color: #ce9178;
+            }}
+            .token.number {{
+                color: #b5cea8;
+            }}
+
+            .btn {{
+                background: var(--primary);
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.9em;
+            }}
+
+            .btn:hover {{
+                opacity: 0.9;
+            }}
+
+            .legend {{
+                margin-top: 15px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                justify-content: center;
+            }}
+
+            .legend-item {{
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.9em;
+            }}
+
+            .legend-color {{
+                width: 12px;
+                height: 12px;
+                border-radius: 2px;
+            }}
+
+            [data-theme="dark"] {{
+                --bg: #1a1a1a;
+                --fg: #ffffff;
+                --panel: #2d2d2d;
+                --border: #404040;
+                --hover: #353535;
+            }}
+        </style>
     </head>
     <body>
-      <div class='container'>
-        <h1>EEPROM ENUM 분석 보고서: <span style='color:#0078d7'>{enum_name_esc}</span></h1>
-        <ul class='summary-list'>
-          <li>분석 파일 수: <b>{total_files}</b></li>
-          <li>함수 수: <b>{total_funcs}</b></li>
-          <li>ENUM 사용 총 횟수: <b>{total_enums}</b></li>
-        </ul>
-        <div class='toolbar'>
-          <input type='text' id='searchInput' onkeyup='filterTable()' placeholder='검색(파일명, 함수명, 코드...)'>
-          <button id='darkBtn' class='dark-toggle' onclick='toggleDarkMode(this)'>🌙 다크모드</button>
-        </div>
-        <table id='resultTable'>
-          <colgroup>
-            <col style='width:18%'>
-            <col style='width:18%'>
-            <col style='width:14%'>
-            <col style='width:auto'>
-          </colgroup>
-          <thead>
-            <tr>
-              <th onclick='sortTable(0)'>파일명</th>
-              <th onclick='sortTable(1)'>함수명</th>
-              <th onclick='sortTable(2)'>ENUM 사용 횟수</th>
-              <th>코드 미리보기</th>
-            </tr>
-          </thead>
-          <tbody>
-    """
+        <div class="container">
+            <div class="header">
+                <h1>ENUM 분석 보고서: <span style="color:var(--primary)">{enum_name_esc}</span></h1>
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-label">분석 파일 수</div>
+                        <div class="stat-value">{total_files}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">함수 수</div>
+                        <div class="stat-value">{total_funcs}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">ENUM 사용 총 횟수</div>
+                        <div class="stat-value">{total_enums}</div>
+                    </div>
+                </div>
+            </div>
 
-    html_rows = ""
-    for idx, r in enumerate(results):
-        file_esc = html.escape(str(r['file']))
-        func_esc = html.escape(str(r['func_name']))
-        enum_esc = html.escape(str(r['enum_count']))
-        code_preview = r['code'][:2000].replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
-        html_rows += f"<tr>"
-        html_rows += f"<td class='ellipsis2'><span title='{file_esc}'>{file_esc}</span></td>"
-        html_rows += f"<td class='ellipsis2'><span title='{func_esc}'>{func_esc}</span></td>"
-        html_rows += f"<td class='ellipsis2'><span title='{enum_esc}'>{enum_esc}</span></td>"
-        html_rows += f"<td><button class='show-btn' onclick='toggleCode({idx})'>코드 보기</button>"
-        html_rows += f"<pre class='code-preview' id='code_{idx}'>{code_preview}</pre></td>"
-        html_rows += f"</tr>"
+            <div class="content-grid">
+                <div class="chart-container">
+                    <div class="chart-title">파일별 ENUM 사용 분포</div>
+                    <div id="pieChart"></div>
+                    <div id="legend" class="legend"></div>
+                </div>
 
-    html_tail = f"""
-          </tbody>
-        </table>
-        <div style='text-align:right;color:#888;font-size:0.95em;margin-top:18px;'>
-          Powered by <b>EEP Checker</b> &middot; {now}
+                <div class="table-container">
+                    <table id="resultTable">
+                        <thead>
+                            <tr>
+                                <th>파일명</th>
+                                <th>함수명</th>
+                                <th style="width:100px">사용 횟수</th>
+                                <th style="width:100px">코드 보기</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {''.join(table_rows)}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-      </div>
+
+        <script>
+        // 차트 데이터
+        const chartData = {chart_data_json};
+        
+        // 파이 차트
+        const width = 300;
+        const height = 300;
+        const radius = Math.min(width, height) / 2;
+
+        const svg = d3.select("#pieChart")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append("g")
+            .attr("transform", `translate(${{width/2}}, ${{height/2}})`);
+
+        const color = d3.scaleOrdinal()
+            .domain(chartData.files)
+            .range(['#2196F3', '#FF9800', '#4CAF50', '#F44336', '#9C27B0', '#00BCD4', '#FFEB3B', '#795548']);
+
+        const pie = d3.pie()
+            .value(d => d.value)
+            .sort(null);
+
+        const arc = d3.arc()
+            .innerRadius(0)
+            .outerRadius(radius * 0.65);
+
+        const outerArc = d3.arc()
+            .innerRadius(radius * 0.7)
+            .outerRadius(radius * 0.7);
+
+        const data_ready = pie(chartData.files.map((d, i) => ({{
+            key: d,
+            value: chartData.counts[i]
+        }})));
+
+        // 파이 조각
+        const slices = svg.selectAll('path')
+            .data(data_ready)
+            .join('path')
+            .attr('d', arc)
+            .attr('fill', d => color(d.data.key))
+            .style("opacity", 0.8)
+            .style("stroke", "white")
+            .style("stroke-width", "2px");
+
+        // 레전드 생성
+        const legend = d3.select("#legend")
+            .selectAll(".legend-item")
+            .data(data_ready)
+            .join("div")
+            .attr("class", "legend-item");
+
+        legend.append("div")
+            .attr("class", "legend-color")
+            .style("background-color", d => color(d.data.key));
+
+        legend.append("div")
+            .text(d => `${{d.data.key}} (${{d.data.value}}회)`);
+
+        // 툴팁
+        const tooltip = d3.select("body")
+            .append("div")
+            .style("position", "absolute")
+            .style("background", "rgba(0,0,0,0.8)")
+            .style("color", "white")
+            .style("padding", "8px")
+            .style("border-radius", "4px")
+            .style("font-size", "12px")
+            .style("pointer-events", "none")
+            .style("opacity", 0);
+
+        slices
+            .on("mouseover", function(event, d) {{
+                d3.select(this)
+                    .style("opacity", 1);
+                tooltip.transition()
+                    .duration(200)
+                    .style("opacity", .9);
+                tooltip.html(
+                    `파일: ${{d.data.key}}<br/>` +
+                    `사용 횟수: ${{d.data.value}}회`
+                )
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            }})
+            .on("mouseout", function() {{
+                d3.select(this)
+                    .style("opacity", 0.8);
+                tooltip.transition()
+                    .duration(500)
+                    .style("opacity", 0);
+            }});
+
+        function toggleCode(idx) {{
+            const codeRow = document.getElementById(`code_${{idx}}`);
+            if (codeRow.style.display === 'none') {{
+                codeRow.style.display = 'table-row';
+                // 코드가 표시될 때 Prism.js 하이라이팅 실행
+                Prism.highlightAllUnder(codeRow);
+            }} else {{
+                codeRow.style.display = 'none';
+            }}
+        }}
+        </script>
     </body>
     </html>
     """
 
-    html_content = html_head + html_rows + html_tail
-
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(html_content)
+    
     print(f"HTML 보고서가 생성되었습니다: {filepath}")

@@ -62,24 +62,33 @@ def debug_print_function_node(node, code, depth=0, debug=False):
 
 def extract_functions_with_enum(node, code, target_enum, debug=False):
     results = []
-    if node.type == 'function_definition':
+    
+    # 함수 정의나 구조체 정의인 경우
+    if node.type in ['function_definition', 'struct_specifier']:
         if debug:
-            print("\nFunction Definition Node Structure:")
+            print("\nNode Structure:")
             debug_print_function_node(node, code, debug=debug)
         
-        func_name = None
-        declarator = node.child_by_field_name('declarator')
-        if declarator:
-            func_name = find_identifier_in_declarator(declarator, code)
-            if func_name and debug:
-                print(f"Found function name: {func_name}")
+        # 이름 찾기
+        name = None
+        if node.type == 'function_definition':
+            declarator = node.child_by_field_name('declarator')
+            if declarator:
+                name = find_identifier_in_declarator(declarator, code)
+        elif node.type == 'struct_specifier':
+            name_node = node.child_by_field_name('name')
+            if name_node:
+                name = code[name_node.start_byte:name_node.end_byte].decode(errors='ignore')
+            else:
+                # typedef struct의 경우 이름이 없을 수 있음
+                name = "(anonymous struct)"
         
         found, enum_count = has_enum_in_function(node, code, target_enum)
         if found:
-            func_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
             results.append({
-                'func_name': func_name or '(이름없음)',
-                'code': func_code,
+                'func_name': name or '(이름없음)',
+                'code': node_code,
                 'enum_count': enum_count
             })
     
