@@ -1,2 +1,5 @@
 __pycache__/
 outputs/
+
+# recent_items.json 파일은 커밋하지 않음
+recent_items.json

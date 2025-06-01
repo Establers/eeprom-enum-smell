@@ -2,13 +2,15 @@ import sys
 import os
 import webbrowser
 import math
+import json
+from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QLabel, QMessageBox, QGridLayout,
-    QTextEdit, QInputDialog, QSpinBox
+    QTextEdit, QInputDialog, QSpinBox, QProgressBar, QMenu
 )
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
-from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase
+from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction
 import main as eep_checker
 
 def load_fonts():
@@ -50,6 +52,7 @@ class PathLineEdit(QLineEdit):
 class AnalyzerThread(QThread):
     """분석 작업을 수행하는 스레드"""
     progress = Signal(str, float)  # 진행 상황과 경과 시간을 전달하는 시그널
+    progress_value = Signal(int)  # 진행률을 전달하는 시그널 (0-100)
     finished = Signal(list)  # 완료 시 프롬프트 파일 목록을 전달하는 시그널
     error = Signal(str)  # 에러 메시지를 전달하는 시그널
 
@@ -69,15 +72,15 @@ class AnalyzerThread(QThread):
                 '--path', self.args['path']
             ]
             
-            # target_lines가 설정된 경우에만 추가
             if self.target_lines is not None:
                 sys.argv.extend(['--target-lines', str(self.target_lines)])
             
-            def progress_callback(status, elapsed):
+            def progress_callback(status, elapsed, progress=None):
                 """진행 상황 업데이트 콜백"""
                 self.progress.emit(status, elapsed)
+                if progress is not None:
+                    self.progress_value.emit(progress)
             
-            # 분석 실행
             prompt_files = eep_checker.main(progress_callback=progress_callback)
             self.finished.emit(prompt_files)
             
@@ -89,7 +92,7 @@ class EEPCheckerGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("eeprom enum smell")
         self.setMinimumWidth(500)
-        self.setFixedHeight(350)  # 높이 고정
+        self.setFixedHeight(360)
         
         # 폰트 로드
         loaded_fonts = load_fonts()
@@ -106,21 +109,33 @@ class EEPCheckerGUI(QMainWindow):
         if self.app_icon:
             self.setWindowIcon(self.app_icon)
         
+        # 최근 분석 항목 로드
+        self.recent_items = self.load_recent_items()
+        
         # 메뉴바 생성
         menubar = self.menuBar()
         
         # 파일 메뉴
         file_menu = menubar.addMenu('파일')
         
+        # 최근 항목 서브메뉴
+        self.recent_menu = QMenu('최근 항목 열기', self)
+        self.update_recent_menu()
+        file_menu.addMenu(self.recent_menu)
+        
+        file_menu.addSeparator()
+        
         # 프롬프트 분할 설정 액션
         self.split_settings_action = file_menu.addAction('프롬프트 분할 설정')
-        self.split_settings_action.setCheckable(True)  # 토글 가능하도록 설정
+        self.split_settings_action.setCheckable(True)
         self.split_settings_action.triggered.connect(self.show_split_settings)
         
         # 분석 시작 액션
         analyze_action = file_menu.addAction('분석 시작')
         analyze_action.setShortcut('Ctrl+R')
         analyze_action.triggered.connect(self.analyze)
+        
+        file_menu.addSeparator()
         
         # 종료 액션
         exit_action = file_menu.addAction('종료')
@@ -235,10 +250,12 @@ class EEPCheckerGUI(QMainWindow):
         layout = QVBoxLayout(central_widget)
         layout.setSpacing(12)
         layout.setContentsMargins(15, 15, 15, 15)
+        layout.setAlignment(Qt.AlignTop)  # 상단 정렬 설정
 
         # 입력 필드 그리드 레이아웃
         grid = QGridLayout()
-        grid.setSpacing(10)  # 그리드 간격 고정
+        grid.setSpacing(10)
+        grid.setAlignment(Qt.AlignTop)  # 그리드도 상단 정렬
 
         # ENUM 이름 입력
         enum_label = QLabel("ENUM 이름")
@@ -260,18 +277,34 @@ class EEPCheckerGUI(QMainWindow):
         path_label = QLabel("프로젝트 경로")
         self.path_input = PathLineEdit()
         self.path_input.setPlaceholderText("폴더를 드래그하거나 경로를 입력/복사하세요")
+        
+        # 찾기/열기 버튼 컨테이너
+        path_buttons = QHBoxLayout()
+        path_buttons.setSpacing(5)
+        
         browse_btn = QPushButton("찾기")
         browse_btn.setObjectName("browse")
+        browse_btn.setFixedWidth(40)  # 버튼 너비 축소
         browse_btn.clicked.connect(self.browse_path)
+        
+        open_btn = QPushButton("열기")
+        open_btn.setObjectName("browse")
+        open_btn.setFixedWidth(40)  # 버튼 너비 축소
+        open_btn.clicked.connect(self.open_path)
+        
+        path_buttons.addWidget(browse_btn)
+        path_buttons.addWidget(open_btn)
+        
         grid.addWidget(path_label, 2, 0)
         grid.addWidget(self.path_input, 2, 1, 1, 2)
-        grid.addWidget(browse_btn, 2, 3)
+        grid.addLayout(path_buttons, 2, 3)
 
         layout.addLayout(grid)
 
         # 버튼 영역
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)  # 버튼 간격 고정
+        button_layout.setSpacing(10)
+        # button_layout.setAlignment(Qt.AlignLeft)  # 버튼도 왼쪽 정렬
         
         # 분석 버튼
         analyze_btn = QPushButton("분석 시작")
@@ -291,21 +324,21 @@ class EEPCheckerGUI(QMainWindow):
 
         # 결과 영역
         result_area = QVBoxLayout()
-        result_area.setSpacing(10)  # 간격 고정
-        result_area.setContentsMargins(0, 0, 0, 15)  # 상하 여백 고정
+        result_area.setSpacing(10)
+        result_area.setContentsMargins(0, 0, 0, 0)
+        result_area.setAlignment(Qt.AlignTop)  # 결과 영역도 상단 정렬
 
         # 결과 텍스트 영역
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
         self.result_text.setStyleSheet(f"""
             QTextEdit {{
-                padding: 15px;
                 background-color: white;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 min-height: 60px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {base_font_size}px;
+                font-size: {small_font_size}px;
                 selection-background-color: #0078d4;
                 selection-color: white;
             }}
@@ -315,10 +348,40 @@ class EEPCheckerGUI(QMainWindow):
         result_area.addWidget(self.result_text)
 
         layout.addLayout(result_area)
-        layout.addStretch()
+        
+        # 진행바 (항상 표시하되 숨김 상태로 시작)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(2)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                background-color: #f0f0f0;
+                margin: 0;
+                padding: 0;
+            }
+            QProgressBar::chunk {
+                background-color: #0078d4;
+            }
+        """)
+        self.progress_bar.hide()
+        layout.addWidget(self.progress_bar)
+        
+        # 남는 공간을 하단에 추가
+        layout.addStretch(1)
 
-        # 상태 표시줄
-        self.statusBar().showMessage('준비')
+        # 상태바 설정
+        status_bar = self.statusBar()
+        status_bar.setStyleSheet("""
+            QStatusBar {
+                padding: 0;
+                margin: 0;
+            }
+        """)
+        
+        # 진행 상태 라벨
+        self.status_label = QLabel()
+        status_bar.addWidget(self.status_label, 1)
 
         # 프롬프트 분할 설정 초기값
         self.target_lines = None  # 기본적으로 분할하지 않음
@@ -327,6 +390,12 @@ class EEPCheckerGUI(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "프로젝트 폴더 선택")
         if path:
             self.path_input.setText(os.path.normpath(path))
+
+    def open_path(self):
+        """현재 경로를 파일 탐색기로 열기"""
+        path = self.path_input.text()
+        if path and os.path.exists(path):
+            os.startfile(os.path.normpath(path))
 
     def show_split_settings(self):
         """프롬프트 분할 설정 대화상자 표시"""
@@ -366,7 +435,6 @@ class EEPCheckerGUI(QMainWindow):
             self.target_lines = None
 
     def analyze(self):
-        # 입력 검증
         if not all([self.enum_input.text(), self.from_input.text(), 
                    self.to_input.text(), self.path_input.text()]):
             msg = QMessageBox(self)
@@ -387,8 +455,13 @@ class EEPCheckerGUI(QMainWindow):
             msg.exec()
             return
 
-        self.statusBar().showMessage('분석 시작...')
+        # 분석 시작 전에 최근 항목에 추가
+        self.add_recent_item()
+
+        self.status_label.setText('분석 시작...')
         self.setEnabled(False)
+        self.progress_bar.show()  # 진행바 표시
+        self.progress_bar.setValue(0)
         
         # 분석 스레드 생성 및 시작
         self.analyzer = AnalyzerThread(
@@ -403,6 +476,7 @@ class EEPCheckerGUI(QMainWindow):
         
         # 시그널 연결
         self.analyzer.progress.connect(self.update_progress)
+        self.analyzer.progress_value.connect(self.progress_bar.setValue)
         self.analyzer.finished.connect(self.analysis_finished)
         self.analyzer.error.connect(self.analysis_error)
         
@@ -411,14 +485,15 @@ class EEPCheckerGUI(QMainWindow):
 
     def update_progress(self, status, elapsed):
         """진행 상황 업데이트"""
-        self.statusBar().showMessage(f"{status} ({elapsed:.1f}초)")
+        self.status_label.setText(f"{status} ({elapsed:.1f}초)")
 
     def analysis_error(self, error_msg):
         """분석 중 에러 발생 시 처리"""
         QMessageBox.critical(self, "오류", f"분석 중 오류가 발생했습니다: {error_msg}",
                            QMessageBox.StandardButton.Ok)
-        self.statusBar().showMessage('오류 발생')
+        self.status_label.setText('오류 발생')
         self.setEnabled(True)
+        self.progress_bar.hide()
 
     def analysis_finished(self, prompt_files):
         """분석 완료 시 처리"""
@@ -456,10 +531,11 @@ class EEPCheckerGUI(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "오류", f"결과 처리 중 오류가 발생했습니다: {str(e)}",
                                QMessageBox.StandardButton.Ok)
-            self.statusBar().showMessage('오류 발생')
+            self.status_label.setText('오류 발생')
         
         finally:
             self.setEnabled(True)
+            self.progress_bar.hide()
 
     def copy_prompt(self):
         """모든 프롬프트 내용을 순서대로 합쳐서 복사"""
@@ -470,7 +546,7 @@ class EEPCheckerGUI(QMainWindow):
                     content.append(f.read())
             
             QApplication.clipboard().setText('\n'.join(content))
-            self.statusBar().showMessage('프롬프트가 클립보드에 복사되었습니다', 3000)
+            self.status_label.setText('프롬프트가 클립보드에 복사되었습니다')
         except Exception as e:
             QMessageBox.warning(self, "복사 오류", 
                               f"프롬프트 복사 중 오류가 발생했습니다: {str(e)}",
@@ -530,6 +606,93 @@ DX하는 회사에서 API도 안주는 ~
             }
         """)
         msg.exec()
+
+    def load_recent_items(self):
+        """최근 분석 항목 로드"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'recent_items.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    items = json.load(f)
+                return items
+        except Exception:
+            pass
+        return []
+
+    def save_recent_items(self):
+        """최근 분석 항목 저장"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'recent_items.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.recent_items, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"최근 항목 저장 실패: {e}")
+
+    def add_recent_item(self):
+        """현재 분석 항목을 최근 목록에 추가"""
+        current_item = {
+            'enum': self.enum_input.text(),
+            'from': self.from_input.text(),
+            'to': self.to_input.text(),
+            'path': self.path_input.text(),
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # 동일한 항목이 있으면 제거
+        self.recent_items = [item for item in self.recent_items 
+                           if not (item['enum'] == current_item['enum'] and 
+                                 item['path'] == current_item['path'])]
+        
+        # 최근 항목을 맨 앞에 추가
+        self.recent_items.insert(0, current_item)
+        
+        # 최대 10개만 유지
+        self.recent_items = self.recent_items[:10]
+        
+        # 저장 및 메뉴 업데이트
+        self.save_recent_items()
+        self.update_recent_menu()
+
+    def update_recent_menu(self):
+        """최근 항목 메뉴 업데이트"""
+        self.recent_menu.clear()
+        
+        if not self.recent_items:
+            no_items = self.recent_menu.addAction("최근 항목 없음")
+            no_items.setEnabled(False)
+            return
+        
+        for item in self.recent_items:
+            # 메뉴 텍스트 생성
+            enum_name = item['enum']
+            path = os.path.basename(item['path'])
+            timestamp = item.get('timestamp', '날짜 없음')
+            text = f"{enum_name} ({path}) - {timestamp}"
+            
+            action = QAction(text, self)
+            action.setData(item)  # 항목 데이터 저장
+            action.triggered.connect(self.load_recent_item)
+            self.recent_menu.addAction(action)
+        
+        self.recent_menu.addSeparator()
+        clear_action = self.recent_menu.addAction("최근 항목 지우기")
+        clear_action.triggered.connect(self.clear_recent_items)
+
+    def load_recent_item(self):
+        """선택한 최근 항목 불러오기"""
+        action = self.sender()
+        item = action.data()
+        
+        self.enum_input.setText(item['enum'])
+        self.from_input.setText(item['from'])
+        self.to_input.setText(item['to'])
+        self.path_input.setText(item['path'])
+
+    def clear_recent_items(self):
+        """최근 항목 모두 지우기"""
+        self.recent_items = []
+        self.save_recent_items()
+        self.update_recent_menu()
 
 def main():
     app = QApplication(sys.argv)

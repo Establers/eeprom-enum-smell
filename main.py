@@ -143,15 +143,15 @@ def main(progress_callback=None):
     
     Args:
         progress_callback (callable, optional): 진행 상황을 알려주는 콜백 함수.
-            callback(status: str, elapsed: float) 형식으로 호출됨.
+            callback(status: str, elapsed: float, progress: int) 형식으로 호출됨.
     """
     start_time = time.time()
     
-    def update_progress(status):
+    def update_progress(status, progress=None):
         """진행 상황 업데이트"""
         if progress_callback:
             elapsed = time.time() - start_time
-            progress_callback(status, elapsed)
+            progress_callback(status, elapsed, progress)
 
     argp = argparse.ArgumentParser(description='EEPROM ENUM 영향 함수 분석기')
     argp.add_argument('--enum', required=True, help='찾으려는 ENUM 이름')
@@ -163,15 +163,18 @@ def main(progress_callback=None):
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
     args = argp.parse_args()
 
-    update_progress("C 파일 검색 중...")
+    update_progress("C 파일 검색 중...", 0)
     c_files = find_c_files(args.path)
     print(f"총 {len(c_files)}개의 C 파일을 찾았습니다.")
 
     all_results = []
     llm_prompts = []
     
-    update_progress(f"C 파일 분석 중... (0/{len(c_files)})")
+    total_files = len(c_files)
     for i, cfile in enumerate(c_files, 1):
+        progress = int((i / total_files) * 100)
+        update_progress(f"C 파일 분석 중... ({i}/{total_files})", progress)
+        
         with open(cfile, encoding='utf-8', errors='ignore') as f:
             code = f.read()
         parser_results = parser.extract_functions_with_enum_file(
@@ -188,18 +191,16 @@ def main(progress_callback=None):
                 r['file'], r['func_name'], args.enum, args.from_value, args.to_value, r['code']
             )
             llm_prompts.append(prompt)
-        
-        update_progress(f"C 파일 분석 중... ({i}/{len(c_files)})")
 
     # outputs 폴더 생성
     output_dir = 'outputs'
     os.makedirs(output_dir, exist_ok=True)
 
-    update_progress("HTML 보고서 생성 중...")
+    update_progress("HTML 보고서 생성 중...", 95)
     # HTML 보고서 저장
     save_html_report(args.enum, all_results, output_dir=output_dir)
 
-    update_progress("프롬프트 파일 생성 중...")
+    update_progress("프롬프트 파일 생성 중...", 98)
     # LLM 프롬프트 저장 (분할 포함)
     import datetime
     now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -223,7 +224,7 @@ def main(progress_callback=None):
         print(f"프롬프트 파일이 생성되었습니다: {prompt_files[0]}")
 
     elapsed = time.time() - start_time
-    update_progress(f"분석 완료! (총 {elapsed:.1f}초)")
+    update_progress(f"분석 완료! (총 {elapsed:.1f}초)", 100)
     print(f"총 수행 시간: {elapsed:.2f}초")
     
     return prompt_files
