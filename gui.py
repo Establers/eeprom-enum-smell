@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QFileDialog, QLabel, QMessageBox, QGridLayout,
     QTextEdit, QInputDialog, QSpinBox
 )
-from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtCore import Qt, QMimeData, QThread, Signal
 from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent
 import main as eep_checker
 
@@ -27,6 +27,43 @@ class PathLineEdit(QLineEdit):
             path = urls[0].toLocalFile()
             if os.path.isdir(path):
                 self.setText(os.path.normpath(path))
+
+class AnalyzerThread(QThread):
+    """분석 작업을 수행하는 스레드"""
+    progress = Signal(str, float)  # 진행 상황과 경과 시간을 전달하는 시그널
+    finished = Signal(list)  # 완료 시 프롬프트 파일 목록을 전달하는 시그널
+    error = Signal(str)  # 에러 메시지를 전달하는 시그널
+
+    def __init__(self, args, target_lines):
+        super().__init__()
+        self.args = args
+        self.target_lines = target_lines
+
+    def run(self):
+        try:
+            # 명령줄 인자 설정
+            sys.argv = [
+                'main.py',
+                '--enum', self.args['enum'],
+                '--from', self.args['from'],
+                '--to', self.args['to'],
+                '--path', self.args['path']
+            ]
+            
+            # target_lines가 설정된 경우에만 추가
+            if self.target_lines is not None:
+                sys.argv.extend(['--target-lines', str(self.target_lines)])
+            
+            def progress_callback(status, elapsed):
+                """진행 상황 업데이트 콜백"""
+                self.progress.emit(status, elapsed)
+            
+            # 분석 실행
+            prompt_files = eep_checker.main(progress_callback=progress_callback)
+            self.finished.emit(prompt_files)
+            
+        except Exception as e:
+            self.error.emit(str(e))
 
 class EEPCheckerGUI(QMainWindow):
     def __init__(self):
@@ -59,7 +96,7 @@ class EEPCheckerGUI(QMainWindow):
         
         # 종료 액션
         exit_action = file_menu.addAction('종료')
-        exit_action.setShortcut('Alt+F4')
+        exit_action.setShortcuts(['Ctrl+Q', 'Alt+F4', 'Ctrl+W'])
         exit_action.triggered.connect(self.close)
         
         # 도움말 메뉴
@@ -302,43 +339,51 @@ class EEPCheckerGUI(QMainWindow):
             msg.exec()
             return
 
-        self.statusBar().showMessage('분석 중...')
+        self.statusBar().showMessage('분석 시작...')
         self.setEnabled(False)
         
-        try:
-            # main.py의 분석 로직 실행
-            args = [
-                'main.py',
-                '--enum', self.enum_input.text(),
-                '--from', self.from_input.text(),
-                '--to', self.to_input.text(),
-                '--path', self.path_input.text()
-            ]
-            
-            # target_lines가 설정된 경우에만 추가
-            if self.target_lines is not None:
-                args.extend(['--target-lines', str(self.target_lines)])
-            
-            sys.argv = args
-            eep_checker.main()
+        # 분석 스레드 생성 및 시작
+        self.analyzer = AnalyzerThread(
+            args={
+                'enum': self.enum_input.text(),
+                'from': self.from_input.text(),
+                'to': self.to_input.text(),
+                'path': self.path_input.text()
+            },
+            target_lines=self.target_lines
+        )
+        
+        # 시그널 연결
+        self.analyzer.progress.connect(self.update_progress)
+        self.analyzer.finished.connect(self.analysis_finished)
+        self.analyzer.error.connect(self.analysis_error)
+        
+        # 스레드 시작
+        self.analyzer.start()
 
+    def update_progress(self, status, elapsed):
+        """진행 상황 업데이트"""
+        self.statusBar().showMessage(f"{status} ({elapsed:.1f}초)")
+
+    def analysis_error(self, error_msg):
+        """분석 중 에러 발생 시 처리"""
+        QMessageBox.critical(self, "오류", f"분석 중 오류가 발생했습니다: {error_msg}",
+                           QMessageBox.StandardButton.Ok)
+        self.statusBar().showMessage('오류 발생')
+        self.setEnabled(True)
+
+    def analysis_finished(self, prompt_files):
+        """분석 완료 시 처리"""
+        try:
             # 결과 파일 찾기
             enum_name = self.enum_input.text()
             output_dir = 'outputs'
             html_files = [f for f in os.listdir(output_dir) 
                          if f.startswith(f"{enum_name}_Output_") and f.endswith('.html')]
-            prompt_files = [f for f in os.listdir(output_dir) 
-                          if f.startswith(f"{enum_name}_LLM_Prompts_") and f.endswith('.txt')]
-
+            
             if html_files and prompt_files:
                 html_path = os.path.abspath(os.path.join(output_dir, sorted(html_files)[-1]))
-                
-                # 프롬프트 파일 찾기
-                base_name = os.path.splitext(sorted(prompt_files)[-1])[0]
-                all_prompt_files = [f for f in os.listdir(output_dir) 
-                                  if f.startswith(base_name)]
-                all_prompt_paths = [os.path.abspath(os.path.join(output_dir, f)) 
-                                  for f in all_prompt_files]
+                all_prompt_paths = [os.path.abspath(p) for p in prompt_files]
                 
                 # 결과 표시
                 result_text = f"분석 완료!\nHTML: {html_path}\n"
@@ -359,11 +404,9 @@ class EEPCheckerGUI(QMainWindow):
                 
                 # HTML 파일 브라우저로 열기
                 webbrowser.open(f'file://{html_path}')
-
-            self.statusBar().showMessage('분석 완료')
-            
+        
         except Exception as e:
-            QMessageBox.critical(self, "오류", f"분석 중 오류가 발생했습니다: {str(e)}",
+            QMessageBox.critical(self, "오류", f"결과 처리 중 오류가 발생했습니다: {str(e)}",
                                QMessageBox.StandardButton.Ok)
             self.statusBar().showMessage('오류 발생')
         
