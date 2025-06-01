@@ -8,8 +8,27 @@ from PySide6.QtWidgets import (
     QTextEdit, QInputDialog, QSpinBox
 )
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
-from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase
 import main as eep_checker
+
+def load_fonts():
+    """외부 폰트 로드"""
+    font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+    if not os.path.exists(font_dir):
+        os.makedirs(font_dir)
+    
+    # 폰트 파일 목록
+    font_files = [f for f in os.listdir(font_dir) if f.endswith(('.ttf', '.otf'))]
+    loaded_fonts = []
+    
+    # 각 폰트 파일 로드
+    for font_file in font_files:
+        font_path = os.path.join(font_dir, font_file)
+        font_id = QFontDatabase.addApplicationFont(font_path)
+        if font_id != -1:
+            loaded_fonts.extend(QFontDatabase.applicationFontFamilies(font_id))
+    
+    return loaded_fonts
 
 class PathLineEdit(QLineEdit):
     def __init__(self, parent=None):
@@ -72,6 +91,15 @@ class EEPCheckerGUI(QMainWindow):
         self.setMinimumWidth(500)
         self.setFixedHeight(350)  # 높이 고정
         
+        # 폰트 로드
+        loaded_fonts = load_fonts()
+        default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
+        
+        # 기본 폰트 크기 설정
+        base_font_size = 17
+        small_font_size = base_font_size - 1
+        large_font_size = base_font_size + 2
+
         # 아이콘 설정
         icon_path = os.path.join(os.path.dirname(__file__), 'imgs', 'eeprom.ico')
         self.app_icon = QIcon(icon_path) if os.path.exists(icon_path) else None
@@ -106,79 +134,99 @@ class EEPCheckerGUI(QMainWindow):
         about_action = help_menu.addAction('프로그램 정보')
         about_action.triggered.connect(self.show_help)
 
-        self.setStyleSheet("""
-            QMainWindow {
+        self.setStyleSheet(f"""
+            QMainWindow {{
                 background-color: #f5f5f5;
-            }
-            QMenuBar {
+            }}
+            QMenuBar {{
                 background-color: #f5f5f5;
                 border-bottom: 1px solid #ddd;
-            }
-            QMenuBar::item {
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+                font-size: {base_font_size}px;
+            }}
+            QMenuBar::item {{
                 padding: 4px 10px;
                 background-color: transparent;
-            }
-            QMenuBar::item:selected {
+            }}
+            QMenuBar::item:selected {{
                 background-color: #e0e0e0;
-            }
-            QMenu {
+            }}
+            QMenu {{
                 background-color: #ffffff;
                 border: 1px solid #ddd;
-            }
-            QMenu::item {
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+                font-size: {base_font_size}px;
+            }}
+            QMenu::item {{
                 padding: 4px 20px;
-            }
-            QMenu::item:selected {
+            }}
+            QMenu::item:selected {{
                 background-color: #e0e0e0;
-            }
-            QLabel {
-                font-size: 12px;
+            }}
+            QLabel {{
+                font-size: {base_font_size}px;
                 color: #333;
                 min-width: 80px;
-            }
-            QLineEdit {
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+            }}
+            QLineEdit {{
                 padding: 6px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 background: white;
-                font-size: 12px;
+                font-size: {base_font_size}px;
                 min-height: 20px;
-            }
-            QPushButton {
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+            }}
+            QPushButton {{
                 padding: 6px 12px;
                 border: none;
                 border-radius: 4px;
                 background-color: #0078d4;
                 color: white;
-                font-size: 12px;
+                font-size: {base_font_size}px;
                 min-height: 20px;
-            }
-            QPushButton:hover {
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+            }}
+            QPushButton:hover {{
                 background-color: #106ebe;
-            }
-            QPushButton:disabled {
+            }}
+            QPushButton:disabled {{
                 background-color: #cccccc;
-            }
-            QPushButton#browse {
+            }}
+            QPushButton#browse {{
                 background-color: #444;
                 padding: 6px 8px;
                 min-width: 60px;
-            }
-            QPushButton#browse:hover {
+            }}
+            QPushButton#browse:hover {{
                 background-color: #666;
-            }
-            QPushButton#copy {
-                background-color: #ccddcc;  /* 비활성화 상태의 초기 색상 */
-            }
-            QPushButton#copy:enabled {
-                background-color: #107c41;  /* 활성화 상태의 색상 */
-            }
-            QPushButton#copy:enabled:hover {
+            }}
+            QPushButton#copy {{
+                background-color: #ccddcc;
+            }}
+            QPushButton#copy:enabled {{
+                background-color: #107c41;
+            }}
+            QPushButton#copy:enabled:hover {{
                 background-color: #0b5a2d;
-            }
-            QStatusBar {
-                font-size: 11px;
-            }
+            }}
+            QStatusBar {{
+                font-size: {small_font_size}px;
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+            }}
+            QMessageBox {{
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+                font-size: {base_font_size}px;
+            }}
+            QMessageBox QPushButton {{
+                min-width: 80px;
+            }}
+            QSpinBox {{
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+                font-size: {base_font_size}px;
+                padding: 4px;
+            }}
         """)
 
         # 중앙 위젯 설정
@@ -249,18 +297,18 @@ class EEPCheckerGUI(QMainWindow):
         # 결과 텍스트 영역
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
-        self.result_text.setStyleSheet("""
-            QTextEdit {
+        self.result_text.setStyleSheet(f"""
+            QTextEdit {{
                 padding: 15px;
                 background-color: white;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 min-height: 60px;
-                font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
-                font-size: 12px;
+                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
+                font-size: {base_font_size}px;
                 selection-background-color: #0078d4;
                 selection-color: white;
-            }
+            }}
         """)
         self.result_text.setFixedHeight(80)
         self.result_text.setPlaceholderText("분석 결과가 여기에 표시됩니다.")
