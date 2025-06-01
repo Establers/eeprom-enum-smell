@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QInputDialog, QSpinBox, QProgressBar, QMenu
 )
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
-from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction
+from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont
 import main as eep_checker
 
 def load_fonts():
@@ -97,7 +97,8 @@ class EEPCheckerGUI(QMainWindow):
         # 폰트 로드
         loaded_fonts = load_fonts()
         default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
-
+        
+        
         # 아이콘 설정
         icon_path = os.path.join(os.path.dirname(__file__), 'imgs', 'eeprom.ico')
         self.app_icon = QIcon(icon_path) if os.path.exists(icon_path) else None
@@ -155,7 +156,6 @@ class EEPCheckerGUI(QMainWindow):
             QMenuBar {{
                 background-color: #f5f5f5;
                 border-bottom: 1px solid #ddd;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QMenuBar::item {{
                 padding: 4px 10px;
@@ -167,7 +167,6 @@ class EEPCheckerGUI(QMainWindow):
             QMenu {{
                 background-color: #ffffff;
                 border: 1px solid #ddd;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QMenu::item {{
                 padding: 4px 20px;
@@ -178,7 +177,6 @@ class EEPCheckerGUI(QMainWindow):
             QLabel {{
                 color: #333;
                 min-width: 80px;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QLineEdit {{
                 padding: 6px;
@@ -186,7 +184,6 @@ class EEPCheckerGUI(QMainWindow):
                 border-radius: 4px;
                 background: white;
                 min-height: 20px;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QPushButton {{
                 padding: 6px 12px;
@@ -195,7 +192,6 @@ class EEPCheckerGUI(QMainWindow):
                 background-color: #0078d4;
                 color: white;
                 min-height: 20px;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QPushButton:hover {{
                 background-color: #106ebe;
@@ -220,17 +216,10 @@ class EEPCheckerGUI(QMainWindow):
             QPushButton#copy:enabled:hover {{
                 background-color: #0b5a2d;
             }}
-            QStatusBar {{
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-            }}
-            QMessageBox {{
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-            }}
             QMessageBox QPushButton {{
                 min-width: 80px;
             }}
             QSpinBox {{
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
                 padding: 4px;
             }}
         """)
@@ -328,8 +317,6 @@ class EEPCheckerGUI(QMainWindow):
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 min-height: 60px;
-                font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-
                 selection-background-color: #0078d4;
                 selection-color: white;
             }}
@@ -718,6 +705,15 @@ DX하는 회사에서 API도 안주는 ~
 
 def main():
     app = QApplication(sys.argv)
+    
+    # 전역 폰트 설정
+    loaded_fonts = load_fonts()
+    default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
+    print(f"설정된 폰트: {default_font}")
+    f = QFont(default_font, 9)
+    f.setHintingPreference(QFont.HintingPreference.PreferNoHinting )
+    app.setFont(f)
+    
     window = EEPCheckerGUI()
     window.show()
     sys.exit(app.exec())
