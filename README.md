@@ -1,77 +1,83 @@
-# ENUM 사용 분석기 (EEP Checker)
+# ENUM 사용 분석기
 
-C 코드에서 특정 ENUM 값의 사용을 분석하고 시각화하는 도구입니다. 코드베이스에서 ENUM이 사용된 위치와 빈도를 파악하여 ENUM 값 변경 시 영향도를 분석하는 데 도움을 줍니다.
+C 코드에서 ENUM 값의 사용을 분석하고, 변경에 필요한 LLM 프롬프트를 생성하는 도구입니다.
 
 ## 주요 기능
 
-- 📊 ENUM 사용 분석
-  - 파일별, 함수별 ENUM 사용 횟수 집계
-  - 구조체 정의 내 ENUM 사용 분석
-  - 함수 내부 ENUM 사용 분석
-
-- 📈 시각적 보고서 생성
-  - 파일별 ENUM 사용 분포 (파이 차트)
-  - 상세 사용 위치 테이블
-  - 코드 미리보기 (구문 강조 지원)
-  - 반응형 웹 디자인
-  - 다크 모드 지원
-
-- 🤖 LLM 프롬프트 생성
-  - ENUM 값 변경에 대한 영향도 분석용 프롬프트 자동 생성
+- C 코드에서 ENUM 사용 위치 자동 검색
+- HTML 형식의 분석 보고서 생성
+  - 파일별 ENUM 사용 분포 시각화
+  - 함수별 사용 횟수 및 코드 미리보기
+- LLM 프롬프트 자동 생성
+  - 프롬프트 자동 분할 기능
+  - 클립보드 복사 지원
+- 사용자 친화적인 GUI
+  - 드래그 & 드롭 지원
+  - 실시간 진행 상황 표시
+  - 직관적인 인터페이스
 
 ## 설치 방법
 
-1. Python 3.8 이상이 필요합니다.
-
+1. Python 3.8 이상 설치
 2. 필요한 패키지 설치:
 ```bash
-pip install tree-sitter tree-sitter-languages
+pip install -r requirements.txt
 ```
 
 ## 사용 방법
 
+### GUI 모드
+
+1. GUI 실행:
 ```bash
-python main.py --enum [ENUM_NAME] --from [OLD_VALUE] --to [NEW_VALUE] --path [PROJECT_PATH]
+python gui.py
 ```
 
-### 매개변수 설명
+2. 필요한 정보 입력:
+   - ENUM 이름
+   - 변경 전/후 값
+   - 분석할 프로젝트 폴더 경로
 
-- `--enum`: 분석할 ENUM 이름
+3. 필요시 프롬프트 분할 설정 (파일 메뉴)
+4. '분석 시작' 버튼 클릭
+
+### CLI 모드
+
+```bash
+python main.py --enum ENUM이름 --from 변경전값 --to 변경후값 --path 프로젝트경로 [--target-lines 줄수]
+```
+
+#### 옵션 설명
+- `--enum`: 찾으려는 ENUM 이름
 - `--from`: 변경 전 ENUM 값
 - `--to`: 변경 후 ENUM 값
-- `--path`: 분석할 C 프로젝트 경로
-- `--debug`: (선택) 디버그 정보 출력
-- `--query`: (선택) 실험적 쿼리 기반 분석 사용
+- `--path`: 분석할 C 프로젝트 폴더 경로
+- `--target-lines`: 프롬프트 분할 시 파일당 목표 줄 수 (선택사항)
+- `--debug`: 디버그 정보 출력 (선택사항)
+- `--query`: 쿼리 기반 방식 사용 (실험적 기능)
 
-### 예시
+## 단축키
 
-```bash
-python main.py --enum MY_ENUM --from 1 --to 2 --path /path/to/project
-```
+- 분석 시작: `Ctrl+R`
+- 프로그램 종료: `Ctrl+Q`, `Alt+F4`, `Ctrl+W`
 
-## 출력 결과
+## 결과물
 
-1. HTML 보고서 (`outputs/[ENUM_NAME]_Output_[TIMESTAMP].html`)
+1. HTML 보고서
    - 파일별 ENUM 사용 분포 차트
-   - 함수별 상세 사용 정보
-   - 인터랙티브 코드 미리보기
+   - 함수별 상세 정보 및 코드 보기
+   - 자동으로 브라우저에서 열림
 
-2. LLM 프롬프트 (`outputs/[ENUM_NAME]_LLM_Prompts_[TIMESTAMP].txt`)
-   - ENUM 값 변경 영향도 분석을 위한 프롬프트
+2. LLM 프롬프트
+   - 자동으로 파일 생성
+   - 필요시 여러 파일로 분할
+   - 클립보드로 복사 가능
 
-## 프로젝트 구조
+## 개발 정보
 
-- `main.py`: CLI 인터페이스 및 메인 로직
-- `eep_checker/`
-  - `parser.py`: C 코드 파싱 (tree-sitter 기반)
-  - `report.py`: HTML 보고서 생성
-  - `prompt.py`: LLM 프롬프트 생성
-
-## 기술 스택
-
-- Python 3.8+
-- tree-sitter: C 코드 파싱
-- D3.js: 데이터 시각화
-- Prism.js: 코드 구문 강조
+- 개발자: 박재환
+- 언어: Python
+- GUI 프레임워크: PySide6
+- 코드 분석: tree-sitter
 
 
