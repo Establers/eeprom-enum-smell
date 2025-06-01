@@ -21,44 +21,11 @@ def has_enum_in_function(node, code, target_enum):
     found = False
     enum_count = 0
     
-    # ENUM 사용이 예상되는 노드 타입들을 검사
-    if node.type in ['switch_statement', 'if_statement', 'case_statement', 
-                     'binary_expression', 'call_expression', 'init_declarator']:
-        # switch/case 문에서의 ENUM 검사
-        if node.type == 'case_statement':
-            value_node = node.child_by_field_name('value')
-            if value_node and target_enum.encode() in code[value_node.start_byte:value_node.end_byte]:
-                found = True
-                enum_count += 1
-        
-        # if문이나 비교 연산에서의 ENUM 검사
-        elif node.type in ['if_statement', 'binary_expression']:
-            condition = node.child_by_field_name('condition') or node
-            if condition and target_enum.encode() in code[condition.start_byte:condition.end_byte]:
-                found = True
-                enum_count += 1
-        
-        # 함수 호출의 인자에서 ENUM 검사
-        elif node.type == 'call_expression':
-            args = node.child_by_field_name('arguments')
-            if args and target_enum.encode() in code[args.start_byte:args.end_byte]:
-                found = True
-                enum_count += code[args.start_byte:args.end_byte].count(target_enum.encode())
-        
-        # 변수 초기화에서의 ENUM 검사
-        elif node.type == 'init_declarator':
-            value = node.child_by_field_name('value')
-            if value and target_enum.encode() in code[value.start_byte:value.end_byte]:
-                found = True
-                enum_count += 1
+    # 현재 노드의 전체 텍스트에서 ENUM 사용 횟수를 한 번에 계산
+    node_text = code[node.start_byte:node.end_byte]
+    enum_count = node_text.count(target_enum.encode())
+    found = enum_count > 0
     
-    # 재귀적으로 자식 노드들도 검사
-    for child in node.children:
-        child_found, child_count = has_enum_in_function(child, code, target_enum)
-        if child_found:
-            found = True
-            enum_count += child_count
-            
     return found, enum_count
 
 def find_identifier_in_declarator(node, code):
