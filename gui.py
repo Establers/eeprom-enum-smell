@@ -87,7 +87,7 @@ class AnalyzerThread(QThread):
 class EEPCheckerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ENUM 사용 분석기")
+        self.setWindowTitle("eeprom enum smell")
         self.setMinimumWidth(500)
         self.setFixedHeight(350)  # 높이 고정
         
@@ -478,12 +478,15 @@ class EEPCheckerGUI(QMainWindow):
 
     def show_help(self):
         help_text = """
-<h3>ENUM 사용 분석기</h3>
+<h3>eeprom enum smell</h3>
 
 <p><b>프로그램 소개</b></p>
-이 프로그램은 C 코드에서 특정 ENUM 값의 사용을 분석하는 도구입니다.<br>
+C 코드에서 특정 ENUM 값의 사용을 분석하는 도구입니다.<br>
 ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
-변경에 필요한 프롬프트를 생성합니다.<br>
+검토에 필요한 프롬프트를 생성합니다.<br>
+단순 사용 함수 긁어오는 겁니다.<br>
+LLM API 없으니까 직접 넣어서 써야합니다.<br>
+DX하는 회사에서 API도 안주는 ~
 
 <p><b>주요 기능</b></p>
 • C 코드에서 ENUM 사용 위치 검색<br>
@@ -491,7 +494,7 @@ ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
 • LLM 프롬프트 자동 생성<br>
 • 프롬프트 자동 분할 기능<br>
 • 실시간 진행 상황 표시<br>
-• 드래그 & 드롭 지원<br>
+• 드래그 & 드롭 지원
 
 <p><b>사용 방법</b></p>
 1. ENUM 이름 입력<br>
@@ -501,7 +504,7 @@ ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
    - 폴더 드래그 & 드롭<br>
    - 찾아보기 버튼 사용<br>
 4. 필요시 프롬프트 분할 설정 (파일 메뉴)<br>
-5. '분석 시작' 버튼 클릭<br>
+5. '분석 시작' 버튼 클릭
 
 <p><b>결과 확인</b></p>
 • HTML 보고서가 자동으로 브라우저에서 열림<br>
@@ -511,8 +514,7 @@ ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
 
 <p><b>단축키</b></p>
 • 분석 시작: Ctrl+R<br>
-• 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W<br>
-
+• 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W
 """
         msg = QMessageBox(self)
         msg.setWindowTitle("프로그램 정보")

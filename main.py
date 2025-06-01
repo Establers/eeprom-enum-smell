@@ -13,7 +13,7 @@ def split_prompt_content(content, target_lines=None):
         return [content]
 
     # 구분자로 프롬프트 분할
-    separator = '\n' + '=' * 80 + '\n'
+    separator = '\n' + '-' * 12 + '\n'
     sections = content.strip().split(separator)
     sections = [s.strip() for s in sections if s.strip()]  # 빈 섹션 제거
     
@@ -24,14 +24,15 @@ def split_prompt_content(content, target_lines=None):
         first_lines = lines[:6] if len(lines) >= 6 else lines  # 처음 6줄 확인
         
         # 프롬프트 특징 확인
-        has_file = any('[파일' in line or '[File' in line for line in first_lines)
-        has_func = any('[함수' in line or '[Function' in line for line in first_lines)
-        has_enum = any('[ENUM' in line or '[enum' in line for line in first_lines)
-        has_change = any('[변경' in line or '[Change' in line for line in first_lines)
-        has_code = '--- 함수 코드 ---' in section
+        has_file = any('File:' in line for line in first_lines)
+        has_func = any('Function:' in line for line in first_lines)
+        has_enum = any('Enum:' in line for line in first_lines)
+        has_change = any('→' in line for line in first_lines)
+        has_code = '```c' in section
         
-        # 프롬프트 판별 (파일명 또는 함수명이 있고, ENUM이나 함수 코드가 있으면 프롬프트로 인정)
-        is_prompt = (has_file or has_func) and (has_enum or has_code)
+        # 프롬프트 판별 (헤더 라인에 File, Function, Enum이 모두 있고 코드 블록이 있으면 프롬프트로 인정)
+        header_complete = has_file and has_func and has_enum and has_change
+        is_prompt = header_complete and has_code
         
         sections_with_lines.append({
             'content': section,
@@ -39,11 +40,12 @@ def split_prompt_content(content, target_lines=None):
             'is_prompt': is_prompt,
             'first_lines': '\n'.join(first_lines),  # 디버그용
             'features': {  # 디버그용
-                '파일명 태그': has_file,
-                '함수명 태그': has_func,
-                'ENUM 태그': has_enum,
+                'File 태그': has_file,
+                'Function 태그': has_func,
+                'Enum 태그': has_enum,
                 '변경 태그': has_change,
-                '함수 코드': has_code
+                '코드 블록': has_code,
+                '헤더 완전성': header_complete
             }
         })
     
@@ -97,7 +99,7 @@ def split_prompt_content(content, target_lines=None):
 def save_split_prompts(content, base_path, target_lines=None):
     """프롬프트를 분할하여 저장"""
     # 구분자 정의
-    separator = '\n' + '=' * 80 + '\n'
+    separator = '\n' + '-' * 12 + '\n'
 
     # target_lines가 None이면 분할하지 않고 바로 저장
     if target_lines is None:
@@ -204,7 +206,7 @@ def main(progress_callback=None):
     base_prompt_path = os.path.join(output_dir, f"{args.enum}_LLM_Prompts_{now}.txt")
     
     # 모든 프롬프트를 하나의 문자열로 결합
-    separator = '\n' + '=' * 80 + '\n'
+    separator = '\n' + '-' * 12 + '\n'
     combined_prompts = separator.join(llm_prompts)
     if combined_prompts:  # 프롬프트가 있는 경우에만 구분자 추가
         combined_prompts = separator + combined_prompts + separator

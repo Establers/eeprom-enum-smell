@@ -18,12 +18,33 @@ FUNCTION_QUERY = """
 query = c_lang.query(FUNCTION_QUERY)
 
 def has_enum_in_function(node, code, target_enum):
+    """특정 노드 내에서 ENUM 사용을 검사하고 횟수를 계산"""
     found = False
     enum_count = 0
     
-    # 현재 노드의 전체 텍스트에서 ENUM 사용 횟수를 한 번에 계산
-    node_text = code[node.start_byte:node.end_byte]
-    enum_count = node_text.count(target_enum.encode())
+    # 주석이나 문자열을 제외한 실제 코드에서의 ENUM 사용만 카운트
+    def visit_node(node):
+        count = 0
+        # 주석이나 문자열은 건너뜀
+        if node.type in ['comment', 'string_literal']:
+            return 0
+            
+        # identifier인 경우 ENUM 체크
+        if node.type == 'identifier':
+            text = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            if text == target_enum:
+                # 부모 노드가 함수 호출이나 변수 선언 등인지 확인
+                parent = node.parent
+                if parent and parent.type not in ['comment', 'string_literal']:
+                    count += 1
+        
+        # 자식 노드들 재귀적으로 방문
+        for child in node.children:
+            count += visit_node(child)
+            
+        return count
+    
+    enum_count = visit_node(node)
     found = enum_count > 0
     
     return found, enum_count
@@ -97,49 +118,48 @@ def extract_functions_with_enum(node, code, target_enum, debug=False):
     return results
 
 def find_all_identifiers(node, code, debug=False):
-    """노드에서 모든 identifier를 찾아서 반환"""
+    """노드에서 모든 identifier를 찾아서 반환 (주석과 문자열 제외)"""
     identifiers = []
     
-    if node.type == 'identifier':
-        text = code[node.start_byte:node.end_byte].decode(errors='ignore')
-        if debug:
-            print(f"Found identifier: {text}")
-        identifiers.append((node, text))
+    def visit_node(node):
+        results = []
+        # 주석이나 문자열은 건너뜀
+        if node.type in ['comment', 'string_literal']:
+            return results
+            
+        if node.type == 'identifier':
+            text = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            if debug:
+                print(f"Found identifier: {text}")
+            results.append((node, text))
+        
+        # 자식 노드들 재귀적으로 방문
+        for child in node.children:
+            results.extend(visit_node(child))
+            
+        return results
     
-    # 일반 자식 노드들 검사
-    for child in node.children:
-        identifiers.extend(find_all_identifiers(child, code, debug))
-    
-    # named children 검사
-    for child in node.named_children:
-        identifiers.extend(find_all_identifiers(child, code, debug))
-    
-    # 필드를 통한 자식 노드들도 검사
-    field_names = ['type', 'declarator', 'value', 'body', 'condition', 'consequence', 
-                  'alternative', 'arguments', 'function', 'left', 'right', 'name']
-    for field_name in field_names:
-        field_node = node.child_by_field_name(field_name)
-        if field_node:
-            identifiers.extend(find_all_identifiers(field_node, code, debug))
-    
-    return identifiers
+    return visit_node(node)
 
 def has_enum_in_node(node, code, target_enum, debug=False):
     """특정 노드 내에서 ENUM 사용을 검사 (재귀적)"""
     found = False
     enum_count = 0
     
-    # 노드 내의 모든 identifier 찾기
+    # 노드 내의 모든 identifier 찾기 (주석과 문자열 제외)
     identifiers = find_all_identifiers(node, code, debug)
     
     # 각 identifier가 target_enum과 일치하는지 검사
     for node, text in identifiers:
         if text == target_enum:
-            if debug:
-                parent_type = node.parent.type if node.parent else 'none'
-                print(f"Found ENUM '{target_enum}' at position {node.start_byte} in {parent_type}")
-            found = True
-            enum_count += 1
+            # 부모 노드가 주석이나 문자열이 아닌 경우에만 카운트
+            parent = node.parent
+            if parent and parent.type not in ['comment', 'string_literal']:
+                if debug:
+                    parent_type = parent.type if parent else 'none'
+                    print(f"Found ENUM '{target_enum}' at position {node.start_byte} in {parent_type}")
+                found = True
+                enum_count += 1
     
     return found, enum_count
 
