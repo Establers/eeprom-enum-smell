@@ -97,11 +97,6 @@ class EEPCheckerGUI(QMainWindow):
         # 폰트 로드
         loaded_fonts = load_fonts()
         default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
-        
-        # 기본 폰트 크기 설정
-        base_font_size = 17
-        small_font_size = base_font_size - 1
-        large_font_size = base_font_size + 2
 
         # 아이콘 설정
         icon_path = os.path.join(os.path.dirname(__file__), 'imgs', 'eeprom.ico')
@@ -148,6 +143,10 @@ class EEPCheckerGUI(QMainWindow):
         # 프로그램 정보
         about_action = help_menu.addAction('프로그램 정보')
         about_action.triggered.connect(self.show_help)
+        
+        # 라이센스 정보
+        license_action = help_menu.addAction('라이센스 정보')
+        license_action.triggered.connect(self.show_license)
 
         self.setStyleSheet(f"""
             QMainWindow {{
@@ -157,7 +156,6 @@ class EEPCheckerGUI(QMainWindow):
                 background-color: #f5f5f5;
                 border-bottom: 1px solid #ddd;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {base_font_size}px;
             }}
             QMenuBar::item {{
                 padding: 4px 10px;
@@ -170,7 +168,6 @@ class EEPCheckerGUI(QMainWindow):
                 background-color: #ffffff;
                 border: 1px solid #ddd;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {base_font_size}px;
             }}
             QMenu::item {{
                 padding: 4px 20px;
@@ -179,7 +176,6 @@ class EEPCheckerGUI(QMainWindow):
                 background-color: #e0e0e0;
             }}
             QLabel {{
-                font-size: {base_font_size}px;
                 color: #333;
                 min-width: 80px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
@@ -189,7 +185,6 @@ class EEPCheckerGUI(QMainWindow):
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 background: white;
-                font-size: {base_font_size}px;
                 min-height: 20px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
@@ -199,7 +194,6 @@ class EEPCheckerGUI(QMainWindow):
                 border-radius: 4px;
                 background-color: #0078d4;
                 color: white;
-                font-size: {base_font_size}px;
                 min-height: 20px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
@@ -227,19 +221,16 @@ class EEPCheckerGUI(QMainWindow):
                 background-color: #0b5a2d;
             }}
             QStatusBar {{
-                font-size: {small_font_size}px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
             }}
             QMessageBox {{
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {base_font_size}px;
             }}
             QMessageBox QPushButton {{
                 min-width: 80px;
             }}
             QSpinBox {{
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {base_font_size}px;
                 padding: 4px;
             }}
         """)
@@ -338,7 +329,7 @@ class EEPCheckerGUI(QMainWindow):
                 border-radius: 4px;
                 min-height: 60px;
                 font-family: '{default_font}', 'Malgun Gothic', sans-serif;
-                font-size: {small_font_size}px;
+
                 selection-background-color: #0078d4;
                 selection-color: white;
             }}
@@ -603,6 +594,37 @@ DX하는 회사에서 API도 안주는 ~
             }
             QLabel {
                 min-width: 400px;
+            }
+        """)
+        msg.exec()
+
+    def show_license(self):
+        """라이센스 정보 표시"""
+        license_text = """
+<h3>오픈소스 라이브러리 정보</h3>
+
+이 프로그램은 다음의 오픈소스 라이브러리들을 사용합니다:<br>
+
+• PySide6 (Qt for Python) - LGPL v3<br>
+• tree-sitter - MIT<br>
+• tree-sitter-languages - MIT<br>
+• D3.js - BSD 3-Clause<br>
+• Prism.js - MIT<br>
+
+<p><small>상세한 라이센스 정보는 프로그램의 LICENSE 파일을 참조하시기 바랍니다.</small></p>
+"""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("라이센스 정보")
+        msg.setText(license_text)
+        if self.app_icon:
+            msg.setWindowIcon(self.app_icon)
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: #f5f5f5;
+            }
+            QLabel {
+                min-width: 400px;
+                min-height: 200px;
             }
         """)
         msg.exec()

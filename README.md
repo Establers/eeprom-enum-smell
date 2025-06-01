@@ -81,3 +81,14 @@ python main.py --enum ENUM이름 --from 변경전값 --to 변경후값 --path �
 - 코드 분석: tree-sitter
 
 
+---
+<p>이 프로그램은 다음 오픈소스 라이브러리를 사용합니다.<br>
+라이선스 전문은 설치 폴더의 <code>LICENSES</code> 디렉터리에서 확인하실 수 있습니다.</p>
+
+<table>
+<tr><td>PySide6</td><td>LGPL v3</td></tr>
+<tr><td>tree-sitter</td><td>MIT</td></tr>
+<tr><td>tree-sitter-languages</td><td>MIT</td></tr>
+<tr><td>D3.js</td><td>BSD 3-Clause</td></tr>
+<tr><td>Prism.js</td><td>MIT</td></tr>
+</table>
