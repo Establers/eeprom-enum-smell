@@ -465,8 +465,6 @@ ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
 • 분석 시작: Ctrl+R<br>
 • 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W<br>
 
-<p><b>개발자 정보</b></p>
-개발자: 박재환
 """
         msg = QMessageBox(self)
         msg.setWindowTitle("프로그램 정보")
