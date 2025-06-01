@@ -53,7 +53,9 @@ python3 main.py --enum EEPROM_BOOT_MODE
 ```
 
 ## 📦 설치
-
+```
+git submodule update --init
+```
 ## ⚠️ 주의사항
 - C 코드만 지원합니다
 - GetEEPROMValue(enum) 형식이 아니라면 분석이 제한될 수 있어요
