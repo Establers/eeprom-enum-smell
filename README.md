@@ -1,70 +1,77 @@
-# who-used-this-eep 🕵️‍♂️
+# ENUM 사용 분석기 (EEP Checker)
 
-> "EEPROM enum 하나 바꿨을 뿐인데… 왜 내 코드가 터지죠?"
+C 코드에서 특정 ENUM 값의 사용을 분석하고 시각화하는 도구입니다. 코드베이스에서 ENUM이 사용된 위치와 빈도를 파악하여 ENUM 값 변경 시 영향도를 분석하는 데 도움을 줍니다.
 
----
+## 주요 기능
 
-## 🤔 이게 뭐야?
+- 📊 ENUM 사용 분석
+  - 파일별, 함수별 ENUM 사용 횟수 집계
+  - 구조체 정의 내 ENUM 사용 분석
+  - 함수 내부 ENUM 사용 분석
 
-`who-used-this-eep`는 EEPROM에서 특정 enum 값을 사용할 때,  
-**그 enum이 쓰인 모든 코드 위치를 자동으로 찾아주는 툴**입니다.
+- 📈 시각적 보고서 생성
+  - 파일별 ENUM 사용 분포 (파이 차트)
+  - 상세 사용 위치 테이블
+  - 코드 미리보기 (구문 강조 지원)
+  - 반응형 웹 디자인
+  - 다크 모드 지원
 
-- `GetEEPROMValue(EEPROM_SOMETHING)` 같은 코드에서
-- `EEPROM_SOMETHING`이 쓰인 모든 함수, 조건문, switch 등을 추적해서
-- **“이 값 바꾸면 어디 터질까?”** 를 사전에 알려줍니다.
+- 🤖 LLM 프롬프트 생성
+  - ENUM 값 변경에 대한 영향도 분석용 프롬프트 자동 생성
 
----
+## 설치 방법
 
-## 🛠️ 예시 시나리오
+1. Python 3.8 이상이 필요합니다.
 
-```c
-uint8_t mode = GetEEPROMValue(EEPROM_BOOT_MODE);
-
-if (mode == 0) { ... }
-else if (mode == 1) { ... }
-else { error(); }  // ← 여기, 문제가 생길 수 있음!
-```
-EEPROM_BOOT_MODE에 새 값을 추가하고 싶은데...
-이게 어디서 쓰이는지 수십 개 파일을 눈으로 뒤지고 있진 않나요?
-
-who-used-this-eep가 대신 찾아줍니다.
-그리고 위험한 패턴은 자동으로 알려줘요.
-
-## 🔍 기능
-GetEEPROMValue(ENUM) 호출 코드 자동 탐지
-
-해당 enum이 쓰인 함수 전체 블록 추출
-
-조건 분기(if, switch) 내 사용 여부 확인
-
-위험한 비교/분기 로직 자동 감지
-
-(선택) LLM을 활용해 특정 값 추가 시 문제 가능성 평가
-
-## 🧪 사용법 (예정)
-```python
-# 분석 실행
-python3 main.py --enum EEPROM_BOOT_MODE
-
-# 결과 출력
-✅  Found in: config/init.c:23
-⚠️  Potential issue in: boot/mode.c:77
-❗  Fallback error handling in: main.c:102
+2. 필요한 패키지 설치:
+```bash
+pip install tree-sitter tree-sitter-languages
 ```
 
-## 📦 설치
-```
-git submodule update --init
-```
-## ⚠️ 주의사항
-- C 코드만 지원합니다
-- GetEEPROMValue(enum) 형식이 아니라면 분석이 제한될 수 있어요
-- 아직 완벽한 정적 분석기는 아닙니다! 보조용으로 사용해주세요
+## 사용 방법
 
-## 😎 왜 만들었냐면요
-EEPROM 값 하나 바꾸고 나서… 바꾼 값 빨리 검토하려고
+```bash
+python main.py --enum [ENUM_NAME] --from [OLD_VALUE] --to [NEW_VALUE] --path [PROJECT_PATH]
+```
 
-## ✨ 미래 계획
-GitHub Actions 등 과 연동한 PR 자동 검사
+### 매개변수 설명
+
+- `--enum`: 분석할 ENUM 이름
+- `--from`: 변경 전 ENUM 값
+- `--to`: 변경 후 ENUM 값
+- `--path`: 분석할 C 프로젝트 경로
+- `--debug`: (선택) 디버그 정보 출력
+- `--query`: (선택) 실험적 쿼리 기반 분석 사용
+
+### 예시
+
+```bash
+python main.py --enum MY_ENUM --from 1 --to 2 --path /path/to/project
+```
+
+## 출력 결과
+
+1. HTML 보고서 (`outputs/[ENUM_NAME]_Output_[TIMESTAMP].html`)
+   - 파일별 ENUM 사용 분포 차트
+   - 함수별 상세 사용 정보
+   - 인터랙티브 코드 미리보기
+
+2. LLM 프롬프트 (`outputs/[ENUM_NAME]_LLM_Prompts_[TIMESTAMP].txt`)
+   - ENUM 값 변경 영향도 분석을 위한 프롬프트
+
+## 프로젝트 구조
+
+- `main.py`: CLI 인터페이스 및 메인 로직
+- `eep_checker/`
+  - `parser.py`: C 코드 파싱 (tree-sitter 기반)
+  - `report.py`: HTML 보고서 생성
+  - `prompt.py`: LLM 프롬프트 생성
+
+## 기술 스택
+
+- Python 3.8+
+- tree-sitter: C 코드 파싱
+- D3.js: 데이터 시각화
+- Prism.js: 코드 구문 강조
 
 
