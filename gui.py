@@ -1,10 +1,11 @@
 import sys
 import os
 import webbrowser
+import math
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QLabel, QMessageBox, QGridLayout,
-    QTextEdit
+    QTextEdit, QInputDialog, QSpinBox
 )
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent
@@ -45,6 +46,11 @@ class EEPCheckerGUI(QMainWindow):
         
         # 파일 메뉴
         file_menu = menubar.addMenu('파일')
+        
+        # 프롬프트 분할 설정 액션
+        self.split_settings_action = file_menu.addAction('프롬프트 분할 설정')
+        self.split_settings_action.setCheckable(True)  # 토글 가능하도록 설정
+        self.split_settings_action.triggered.connect(self.show_split_settings)
         
         # 분석 시작 액션
         analyze_action = file_menu.addAction('분석 시작')
@@ -203,9 +209,9 @@ class EEPCheckerGUI(QMainWindow):
         result_area.setSpacing(10)  # 간격 고정
         result_area.setContentsMargins(0, 0, 0, 15)  # 상하 여백 고정
 
-        # 결과 텍스트 영역 (QTextEdit 사용)
+        # 결과 텍스트 영역
         self.result_text = QTextEdit()
-        self.result_text.setReadOnly(True)  # 읽기 전용
+        self.result_text.setReadOnly(True)
         self.result_text.setStyleSheet("""
             QTextEdit {
                 padding: 15px;
@@ -219,7 +225,7 @@ class EEPCheckerGUI(QMainWindow):
                 selection-color: white;
             }
         """)
-        self.result_text.setFixedHeight(80)  # 높이 고정
+        self.result_text.setFixedHeight(80)
         self.result_text.setPlaceholderText("분석 결과가 여기에 표시됩니다.")
         result_area.addWidget(self.result_text)
 
@@ -229,10 +235,50 @@ class EEPCheckerGUI(QMainWindow):
         # 상태 표시줄
         self.statusBar().showMessage('준비')
 
+        # 프롬프트 분할 설정 초기값
+        self.target_lines = None  # 기본적으로 분할하지 않음
+
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "프로젝트 폴더 선택")
         if path:
             self.path_input.setText(os.path.normpath(path))
+
+    def show_split_settings(self):
+        """프롬프트 분할 설정 대화상자 표시"""
+        if not self.split_settings_action.isChecked():
+            self.target_lines = None  # 분할 비활성화
+            return
+
+        msg = QMessageBox(self)
+        if self.app_icon:
+            msg.setWindowIcon(self.app_icon)
+        msg.setWindowTitle("프롬프트 분할 설정")
+        msg.setText("프롬프트를 여러 파일로 분할")
+        
+        # 스핀박스로 줄 수 입력받기
+        layout = msg.layout()
+        lines_widget = QWidget()
+        lines_layout = QHBoxLayout(lines_widget)
+        
+        lines_label = QLabel("파일당 최대 줄 수:")
+        lines_spin = QSpinBox()
+        lines_spin.setRange(100, 10000)
+        lines_spin.setValue(2000)  # 기본값
+        lines_spin.setSingleStep(100)
+        
+        lines_layout.addWidget(lines_label)
+        lines_layout.addWidget(lines_spin)
+        
+        # 메시지 박스에 위젯 추가
+        layout.addWidget(lines_widget, 1, 1)
+        
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        
+        if msg.exec() == QMessageBox.Ok:
+            self.target_lines = lines_spin.value()
+        else:
+            self.split_settings_action.setChecked(False)
+            self.target_lines = None
 
     def analyze(self):
         # 입력 검증
@@ -260,14 +306,20 @@ class EEPCheckerGUI(QMainWindow):
         self.setEnabled(False)
         
         try:
-            # 기존 main.py의 분석 로직 실행
-            sys.argv = [
+            # main.py의 분석 로직 실행
+            args = [
                 'main.py',
                 '--enum', self.enum_input.text(),
                 '--from', self.from_input.text(),
                 '--to', self.to_input.text(),
                 '--path', self.path_input.text()
             ]
+            
+            # target_lines가 설정된 경우에만 추가
+            if self.target_lines is not None:
+                args.extend(['--target-lines', str(self.target_lines)])
+            
+            sys.argv = args
             eep_checker.main()
 
             # 결과 파일 찾기
@@ -280,18 +332,30 @@ class EEPCheckerGUI(QMainWindow):
 
             if html_files and prompt_files:
                 html_path = os.path.abspath(os.path.join(output_dir, sorted(html_files)[-1]))
-                prompt_path = os.path.abspath(os.path.join(output_dir, sorted(prompt_files)[-1]))
+                
+                # 프롬프트 파일 찾기
+                base_name = os.path.splitext(sorted(prompt_files)[-1])[0]
+                all_prompt_files = [f for f in os.listdir(output_dir) 
+                                  if f.startswith(base_name)]
+                all_prompt_paths = [os.path.abspath(os.path.join(output_dir, f)) 
+                                  for f in all_prompt_files]
                 
                 # 결과 표시
-                self.result_text.setText(
-                    f"분석 완료!\nHTML: {html_path}\n프롬프트: {prompt_path}"
-                )
+                result_text = f"분석 완료!\nHTML: {html_path}\n"
+                if len(all_prompt_paths) > 1:
+                    result_text += "프롬프트 파일:\n"
+                    for path in sorted(all_prompt_paths):
+                        result_text += f"{path}\n"
+                else:
+                    result_text += f"프롬프트: {all_prompt_paths[0]}"
+                
+                self.result_text.setText(result_text)
                 
                 # 복사 버튼 활성화
                 self.copy_btn.setEnabled(True)
                 
-                # 최신 프롬프트 파일 저장
-                self.latest_prompt_path = prompt_path
+                # 최신 프롬프트 파일들 저장
+                self.latest_prompt_paths = sorted(all_prompt_paths)
                 
                 # HTML 파일 브라우저로 열기
                 webbrowser.open(f'file://{html_path}')
@@ -307,10 +371,14 @@ class EEPCheckerGUI(QMainWindow):
             self.setEnabled(True)
 
     def copy_prompt(self):
+        """모든 프롬프트 내용을 순서대로 합쳐서 복사"""
         try:
-            with open(self.latest_prompt_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            QApplication.clipboard().setText(content)
+            content = []
+            for path in self.latest_prompt_paths:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content.append(f.read())
+            
+            QApplication.clipboard().setText('\n'.join(content))
             self.statusBar().showMessage('프롬프트가 클립보드에 복사되었습니다', 3000)
         except Exception as e:
             QMessageBox.warning(self, "복사 오류", 
