@@ -344,7 +344,7 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
     <body>
         <div class="container">
             <div class="header">
-                <h1>ENUM 분석 보고서: <span style="color:var(--primary)">{enum_name_esc}</span></h1>
+                <h1>🙂 ENUM: <span style="color:var(--primary)">{enum_name_esc}</span></h1>
                 <div class="stats">
                     <div class="stat-item">
                         <div class="stat-label">분석 파일 수</div>
