@@ -47,7 +47,7 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
             <td colspan="4">
                 <div class="code-container">
                     <div class="code-preview">
-                        <pre><code class="language-c">{html.escape(r['code'])}</code></pre>
+                        <pre class="line-numbers"><code class="language-c">{html.escape(r['code'])}</code></pre>
                     </div>
                 </div>
             </td>
@@ -64,8 +64,10 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
         <meta name='viewport' content='width=device-width, initial-scale=1'>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
         <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
         <style>
             :root {{
                 --primary: #0078d7;
@@ -286,6 +288,49 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
                 --border: #404040;
                 --hover: #353535;
             }}
+
+            /* 라인 번호 스타일 */
+            .line-numbers .line-numbers-rows {{
+                border-right: 2px solid #404040;
+                padding-right: 10px;
+            }}
+
+            .line-numbers-rows > span:before {{
+                color: #808080;
+            }}
+
+            /* 검색 필드 스타일 */
+            .search-container {{
+                margin-bottom: 15px;
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }}
+
+            .search-field {{
+                flex: 1;
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                font-size: 14px;
+            }}
+
+            .search-type {{
+                padding: 8px;
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                background: white;
+            }}
+
+            /* 검색 결과 하이라이트 */
+            .highlight {{
+                background-color: #fff3cd;
+            }}
+
+            /* 숨겨진 행 */
+            tr.hidden {{
+                display: none;
+            }}
         </style>
     </head>
     <body>
@@ -316,6 +361,14 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
                 </div>
 
                 <div class="table-container">
+                    <div class="search-container">
+                        <select class="search-type" id="searchType">
+                            <option value="file">파일명</option>
+                            <option value="function">함수명</option>
+                        </select>
+                        <input type="text" class="search-field" id="searchField" 
+                               placeholder="검색어를 입력하세요..." />
+                    </div>
                     <table id="resultTable">
                         <thead>
                             <tr>
@@ -438,6 +491,49 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
                 codeRow.style.display = 'none';
             }}
         }}
+
+        // 검색 기능
+        const searchField = document.getElementById('searchField');
+        const searchType = document.getElementById('searchType');
+        const resultTable = document.getElementById('resultTable');
+        const tbody = resultTable.getElementsByTagName('tbody')[0];
+        const rows = tbody.getElementsByTagName('tr');
+
+        function filterTable() {{
+            const searchText = searchField.value.toLowerCase();
+            const type = searchType.value;
+            let columnIndex = type === 'file' ? 0 : 1;
+            
+            for (let i = 0; i < rows.length; i += 2) {{  // 2씩 증가 (코드 행 제외)
+                const cell = rows[i].getElementsByTagName('td')[columnIndex];
+                const cellText = cell.textContent.toLowerCase();
+                
+                if (cellText.includes(searchText)) {{
+                    rows[i].classList.remove('hidden');
+                    if (i + 1 < rows.length) {{
+                        rows[i + 1].classList.remove('hidden');
+                    }}
+                    
+                    // 검색어 하이라이트
+                    if (searchText) {{
+                        cell.innerHTML = cell.textContent.replace(
+                            new RegExp(searchText, 'gi'),
+                            match => `<span class="highlight">${{match}}</span>`
+                        );
+                    }} else {{
+                        cell.innerHTML = cell.textContent;
+                    }}
+                }} else {{
+                    rows[i].classList.add('hidden');
+                    if (i + 1 < rows.length) {{
+                        rows[i + 1].classList.add('hidden');
+                    }}
+                }}
+            }}
+        }}
+
+        searchField.addEventListener('input', filterTable);
+        searchType.addEventListener('change', filterTable);
         </script>
     </body>
     </html>
