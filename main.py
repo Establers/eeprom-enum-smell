@@ -129,8 +129,19 @@ def save_split_prompts(content, base_path, target_lines=None):
 
 
 def find_c_files(root_dir):
+    # 시스템 경로 검증
+    root_dir = os.path.normpath(root_dir)
+    
+    # 실제 루트 디렉토리인지 확인
+    if root_dir.rstrip('\\') in [chr(d) + ':' for d in range(ord('C'), ord('G')+1)]:
+        raise ValueError("시스템 루트\n디렉터리 불가")
+    
     c_files = []
     for dirpath, _, filenames in os.walk(root_dir):
+        # 숨김 폴더 제외
+        if any(part.startswith('.') for part in dirpath.split(os.sep)):
+            continue
+            
         for f in filenames:
             if f.endswith(('.c', '.h')):
                 c_files.append(os.path.join(dirpath, f))

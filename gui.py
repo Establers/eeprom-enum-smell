@@ -436,6 +436,28 @@ class EEPCheckerGUI(QMainWindow):
             msg.exec()
             return
 
+        # 경로 검증 (main.py의 find_c_files 함수를 통해)
+        try:
+            eep_checker.find_c_files(self.path_input.text())
+        except ValueError as e:
+            msg = QMessageBox(self)
+            if self.app_icon:
+                msg.setWindowIcon(self.app_icon)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("경로 오류")
+            msg.setText(str(e))
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: #f5f5f5;
+                }
+                QPushButton {
+                    min-width: 30px;
+                    padding: 5px;
+                }
+            """)
+            msg.exec()
+            return
+
         # 분석 시작 전에 최근 항목에 추가
         self.add_recent_item()
 
