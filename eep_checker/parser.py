@@ -159,6 +159,14 @@ def debug_print_function_node(node, code, depth=0, debug=False):
             debug_print_function_node(child_node, code, depth + 1, debug=debug)
 
 def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False):
+    """
+    AST의 node를 재귀 탐색하면서,
+    1) 전역에서 enum을 쓰는 변수들(enum_vars) 수집 (최상위 호출 시)
+    2) 함수 정의, struct 정의, declaration 노드에서
+       (a) target_enum 직접 사용 or
+       (b) enum_vars 중 하나라도 사용되는 경우
+       결과 리스트에 포함
+    """
     if enum_vars is None:
         if node.type == 'translation_unit':
             enum_vars = collect_enum_global_vars(node, code, target_enum)
@@ -168,23 +176,26 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
             enum_vars = set()
 
     results = []
+
     if node.type in ['function_definition', 'struct_specifier', 'declaration']:
+        # 1) 노드별 이름 추출
         name = None
         if node.type == 'function_definition':
             decl = node.child_by_field_name('declarator')
             if decl:
                 name = find_identifier_in_declarator(decl, code)
+
         elif node.type == 'struct_specifier':
             name_node = node.child_by_field_name('name')
             if name_node:
                 name = code[name_node.start_byte:name_node.end_byte].decode(errors='ignore')
             else:
                 name = "(anonymous struct)"
+
         elif node.type == 'declaration':
             func_parent_name = get_enclosing_function_name(node, code)
-            if func_parent_name:
-                name = func_parent_name
-            else:
+            if func_parent_name is None:
+                # 전역 선언인 경우에만 변수명 추출
                 var_name_node = node.child_by_field_name('declarator')
                 if not var_name_node:
                     init_decl = node.child_by_field_name('init_declarator')
@@ -192,37 +203,51 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                         var_name_node = init_decl.child_by_field_name('declarator')
                 if var_name_node:
                     name = find_identifier_in_declarator(var_name_node, code)
+            else:
+                # 함수 내부 선언일 경우, 함수 단위에서만 결과에 남도록 name을 None으로 유지
+                name = None
 
+        # 2) 직접 enum(target_enum) 사용 여부 + 개수
         found_direct, enum_count_direct = has_enum_in_function(node, code, target_enum)
+
+        # 3) enum_vars 목록에 든 변수가 쓰였는지 검사
         found_via_var = False
-        if enum_vars: # enum_vars가 비어있지 않은 경우에만 검사
+        if enum_vars:
             def visit_for_var(n):
                 nonlocal found_via_var
-                if found_via_var: return
-                if n.type in ['comment', 'string_literal']: return
+                if found_via_var:
+                    return
+                if n.type in ['comment', 'string_literal']:
+                    return
                 if n.type == 'identifier':
                     txt = code[n.start_byte:n.end_byte].decode(errors='ignore')
                     if txt in enum_vars:
                         found_via_var = True
                         return
-                for c_node in n.children: # 변수명 변경 c -> c_node
-                    if found_via_var: return
+                for c_node in n.children:
+                    if found_via_var:
+                        return
                     visit_for_var(c_node)
             visit_for_var(node)
 
-        if found_direct or found_via_var:
+        # 4) “직접 enum 사용”이나 “enum_vars 통해 사용” 중 하나라도 있으면 결과에 추가
+        #    단, name이 None인 경우(== 함수 내부 선언이었다면)에는 추가하지 않음
+        if (found_direct or found_via_var) and name:
             node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
             results.append({
-                'func_name': name or '(이름없음)',
+                'func_name': name,
                 'code': node_code,
                 'enum_count': enum_count_direct
             })
             if debug:
-                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars_at_this_point: {enum_vars}")
+                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}")
 
-    for child_node in node.children: # 변수명 변경 child -> child_node
+    # 5) 하위 노드 재귀 호출 (enum_vars를 그대로 넘겨줌)
+    for child_node in node.children:
         results.extend(extract_functions_with_enum(child_node, code, target_enum, enum_vars, debug=debug))
+
     return results
+
 
 def find_all_identifiers(node, code, debug=False):
     identifiers = []
