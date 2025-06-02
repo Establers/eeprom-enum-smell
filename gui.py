@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, QMimeData, QThread, Signal
 from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont, QActionGroup
 import main as eep_checker
 from utils import find_c_files
+import time
 
 def load_fonts():
     """외부 폰트 로드"""
@@ -389,6 +390,10 @@ class EEPCheckerGUI(QMainWindow):
         # 최근 프롬프트 파일 경로 저장용
         self.latest_prompt_paths = []
 
+        # 이스터에그 관련 변수 추가
+        self._easter_egg_count = 0
+        self._last_open_click_time = 0
+
     def set_encoding(self):
         action = self.sender()
         if action and action.isChecked():
@@ -403,6 +408,49 @@ class EEPCheckerGUI(QMainWindow):
     def open_path(self):
         """현재 경로를 파일 탐색기로 열기"""
         path = self.path_input.text()
+        
+        # 이스터에그: 빈 경로에서 빠르게 5번 클릭
+        current_time = time.time()
+        if not path:
+            # 1.5초 이내의 클릭만 카운트
+            if current_time - self._last_open_click_time < 1.5:
+                self._easter_egg_count += 1
+            else:
+                self._easter_egg_count = 1
+            
+            self._last_open_click_time = current_time
+            
+            # 10번 클릭 달성
+            if self._easter_egg_count >= 5:
+                self._easter_egg_count = 0  # 카운트 리셋
+                msg = QMessageBox(self)
+                if self.app_icon:
+                    msg.setWindowIcon(self.app_icon)
+                msg.setWindowTitle("☕ 지갑 열기!")
+                msg.setText("열기를 마니 누르셨네여<br><br>1층에 가서 커피☕ 한잔 사주시나요?<br>")
+                
+                # 커스텀 버튼 추가
+                donate_btn = msg.addButton("커피사기 💖", QMessageBox.AcceptRole)
+                donate_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #ff69b4;
+                        color: white;
+                        padding: 8px 15px;
+                        border: none;
+                        border-radius: 4px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover {
+                        background-color: #ff1493;
+                    }
+                """)
+                
+                msg.addButton("다음에요 😅", QMessageBox.RejectRole)
+                
+                if msg.exec() == 0:  # 후원하기 선택
+                    return
+                return
+                
         if path and os.path.exists(path):
             os.startfile(os.path.normpath(path))
 
