@@ -144,10 +144,14 @@ def save_split_prompts(content, base_path, target_lines=None):
         list: 저장된 파일 경로 목록
     """
     separator = '\n' + '-' * 12 + '\n'
+    instruction_text = """답변은 함수별로 구분된 섹션”으로, 각 항목마다 핵심만 짧은 문장으로 작성하세요. 
+특히 5번 심각도는 “1점(낮음) ~ 5점(높음)” 중 하나로 표현하거나 “높음/중간/낮음”으로 표시해 주십시오.
+    
+"""
 
     if target_lines is None:
         with open(base_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+            f.write(instruction_text + content)
         return [base_path]
 
     parts = split_prompt_content(content, target_lines)
@@ -155,17 +159,17 @@ def save_split_prompts(content, base_path, target_lines=None):
     
     if len(parts) == 1:
         with open(base_path, 'w', encoding='utf-8') as f:
-            f.write(parts[0][0])
+            f.write(instruction_text + parts[0][0])
         return [base_path]
     
     base_name, ext = os.path.splitext(base_path)
     for i, (part_content, prompt_count) in enumerate(parts, 1):
         part_path = f"{base_name}_part{i}_{prompt_count}prompts{ext}"
         with open(part_path, 'w', encoding='utf-8') as f:
-            f.write(separator + part_content + separator)
+            f.write(instruction_text + separator + part_content + separator)
         saved_files.append(part_path)
     
-    return saved_files 
+    return saved_files
 
 def get_analysis_stats(enum_name: str, results: list) -> dict:
     """분석 결과의 통계 정보를 반환합니다.

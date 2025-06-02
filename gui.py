@@ -146,7 +146,7 @@ class EEPCheckerGUI(QMainWindow):
         output_menu.addAction(self.include_headers_action)
         
         # 인코딩 설정 메뉴 추가
-        encoding_menu = file_menu.addMenu('인코딩')
+        encoding_menu = file_menu.addMenu('소스코드 인코딩')
         self.encoding_group = QActionGroup(self)
         self.encoding_group.setExclusive(True)
 
