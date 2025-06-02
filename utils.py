@@ -1,11 +1,12 @@
 import os
 
-def find_c_files(root_dir):
+def find_c_files(root_dir, include_headers=False):
     """
     지정된 디렉토리에서 C/H 파일을 찾습니다.
     
     Args:
         root_dir (str): 검색할 루트 디렉토리 경로
+        include_headers (bool): 헤더 파일(.h)도 포함할지 여부
         
     Returns:
         list: 발견된 C/H 파일 경로 목록
@@ -27,7 +28,8 @@ def find_c_files(root_dir):
             continue
             
         for f in filenames:
-            if f.endswith(('.c', '.h')):
+            # 헤더 파일은 옵션에 따라 포함
+            if f.endswith('.c') or (include_headers and f.endswith('.h')):
                 c_files.append(os.path.join(dirpath, f))
     return c_files
 

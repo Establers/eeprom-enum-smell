@@ -69,6 +69,7 @@ def main(progress_callback=None):
     argp.add_argument('--query', action='store_true', help='쿼리 기반 방식 사용(실험적)')
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
     argp.add_argument('--csv', action='store_true', help='분석 결과를 CSV 파일로도 저장')
+    argp.add_argument('--include-headers', action='store_true', help='헤더 파일(.h)도 분석에 포함')
     args = argp.parse_args()
 
     # 경로 검증
@@ -80,12 +81,12 @@ def main(progress_callback=None):
         return [], error_logs
 
     update_progress(f"C, H 파일 검색 중 (인코딩: {args.encoding})...", 0)
-    c_files = find_c_files(args.path)
+    c_files = find_c_files(args.path, include_headers=args.include_headers)
     if not c_files:
         log_error(f"[Warning] 지정된 경로에서 C/H 파일을 찾을 수 없습니다: {args.path}")
         return [], error_logs
     
-    print(f"총 {len(c_files)}개의 C, H 파일을 찾았습니다.")
+    print(f"총 {len(c_files)}개의 {'C/H' if args.include_headers else 'C'} 파일을 찾았습니다.")
 
     all_results = []
     llm_prompts = []
@@ -94,7 +95,7 @@ def main(progress_callback=None):
     for i, cfile in enumerate(c_files, 1):
         progress = int((i / total_files) * 100)
         rel_path = os.path.relpath(cfile, args.path)
-        update_progress(f"C, H 파일 분석 중... ({i}/{total_files})", progress)
+        update_progress(f"열심히 파일 분석 중... ({i}/{total_files})", progress)
         
         # 파일 읽기 시도 (지정된 인코딩 사용)
         try:

@@ -139,6 +139,12 @@ class EEPCheckerGUI(QMainWindow):
         self.csv_action.triggered.connect(self.toggle_csv_output)
         output_menu.addAction(self.csv_action)
         
+        # 헤더 파일 포함 액션 추가
+        self.include_headers_action = QAction('헤더 파일(.h) 포함', self, checkable=True)
+        self.include_headers_action.setChecked(False)  # 기본값은 False
+        self.include_headers_action.triggered.connect(self.toggle_include_headers)
+        output_menu.addAction(self.include_headers_action)
+        
         # 인코딩 설정 메뉴 추가
         encoding_menu = file_menu.addMenu('인코딩')
         self.encoding_group = QActionGroup(self)
@@ -511,6 +517,11 @@ class EEPCheckerGUI(QMainWindow):
         self.csv_enabled = self.csv_action.isChecked()
         self.status_label.setText(f"CSV 출력: {'켜짐' if self.csv_enabled else '꺼짐'}")
 
+    def toggle_include_headers(self):
+        """헤더 파일 포함 옵션 토글"""
+        is_enabled = self.include_headers_action.isChecked()
+        self.status_label.setText(f"헤더 파일 검사: {'포함' if is_enabled else '제외'}")
+
     def analyze(self):
         if not all([self.enum_input.text(), self.from_input.text(), 
                    self.to_input.text(), self.path_input.text()]):
@@ -534,7 +545,7 @@ class EEPCheckerGUI(QMainWindow):
 
         # 경로 검증 (main.py의 find_c_files 함수를 통해)
         try:
-            find_c_files(self.path_input.text())
+            find_c_files(self.path_input.text(), include_headers=self.include_headers_action.isChecked())
         except ValueError as e:
             msg = QMessageBox(self)
             if self.app_icon:
@@ -569,7 +580,8 @@ class EEPCheckerGUI(QMainWindow):
                 'from': self.from_input.text(),
                 'to': self.to_input.text(),
                 'path': self.path_input.text(),
-                'csv': self.csv_enabled  # CSV 옵션 추가
+                'csv': self.csv_enabled,
+                'include_headers': self.include_headers_action.isChecked()  # 헤더 파일 포함 설정 전달
             },
             target_lines=self.target_lines,
             encoding=self.current_encoding
@@ -695,6 +707,8 @@ AX DX 하자면서 API 하나 안줘~!
                 for item in items:
                     if 'encoding' not in item:
                         item['encoding'] = 'utf-8'
+                    if 'include_headers' not in item:
+                        item['include_headers'] = False
                 return items
         except Exception:
             pass
@@ -718,7 +732,8 @@ AX DX 하자면서 API 하나 안줘~!
             'path': self.path_input.text(),
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'encoding': self.current_encoding,
-            'csv_enabled': self.csv_enabled  # CSV 설정 추가
+            'csv_enabled': self.csv_enabled,
+            'include_headers': self.include_headers_action.isChecked()  # 헤더 파일 포함 설정 저장
         }
         
         # 동일한 항목이 있으면 제거
@@ -784,7 +799,14 @@ AX DX 하자면서 API 하나 안줘~!
         self.csv_enabled = item.get('csv_enabled', False)
         self.csv_action.setChecked(self.csv_enabled)
         
-        self.status_label.setText(f"최근 항목 로드됨. 인코딩: {self.current_encoding}, CSV: {'켜짐' if self.csv_enabled else '꺼짐'}")
+        # 헤더 파일 포함 설정 복원
+        self.include_headers_action.setChecked(item.get('include_headers', False))
+        
+        self.status_label.setText(
+            f"최근 항목 로드됨. 인코딩: {self.current_encoding}, "
+            f"CSV: {'켜짐' if self.csv_enabled else '꺼짐'}, "
+            f"헤더: {'포함' if self.include_headers_action.isChecked() else '제외'}"
+        )
 
     def clear_recent_items(self):
         """최근 항목 모두 지우기"""
