@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QInputDialog, QSpinBox, QProgressBar, QMenu
 )
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
-from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont
+from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont, QActionGroup
 import main as eep_checker
 from utils import find_c_files
 
@@ -20,11 +20,9 @@ def load_fonts():
     if not os.path.exists(font_dir):
         os.makedirs(font_dir)
     
-    # 폰트 파일 목록
     font_files = [f for f in os.listdir(font_dir) if f.endswith(('.ttf', '.otf'))]
     loaded_fonts = []
     
-    # 각 폰트 파일 로드
     for font_file in font_files:
         font_path = os.path.join(font_dir, font_file)
         font_id = QFontDatabase.addApplicationFont(font_path)
@@ -57,10 +55,11 @@ class AnalyzerThread(QThread):
     finished = Signal(list, list)  # 완료 시 프롬프트 파일 목록과 에러 로그를 전달하는 시그널
     error = Signal(str)  # 에러 메시지를 전달하는 시그널
 
-    def __init__(self, args, target_lines):
+    def __init__(self, args, target_lines, encoding):
         super().__init__()
         self.args = args
         self.target_lines = target_lines
+        self.encoding = encoding
 
     def run(self):
         try:
@@ -70,7 +69,8 @@ class AnalyzerThread(QThread):
                 '--enum', self.args['enum'],
                 '--from', self.args['from'],
                 '--to', self.args['to'],
-                '--path', self.args['path']
+                '--path', self.args['path'],
+                '--encoding', self.encoding
             ]
             
             if self.target_lines is not None:
@@ -108,6 +108,7 @@ class EEPCheckerGUI(QMainWindow):
         
         # 최근 분석 항목 로드
         self.recent_items = self.load_recent_items()
+        self.current_encoding = 'utf-8'
         
         # 메뉴바 생성
         menubar = self.menuBar()
@@ -119,6 +120,26 @@ class EEPCheckerGUI(QMainWindow):
         self.recent_menu = QMenu('최근 항목 열기', self)
         self.update_recent_menu()
         file_menu.addMenu(self.recent_menu)
+        
+        file_menu.addSeparator()
+        
+        # 인코딩 설정 메뉴 추가
+        encoding_menu = file_menu.addMenu('인코딩')
+        self.encoding_group = QActionGroup(self)
+        self.encoding_group.setExclusive(True)
+
+        utf8_action = QAction('UTF-8 (기본값)', self, checkable=True)
+        utf8_action.setData('utf-8')
+        utf8_action.setChecked(True)
+        utf8_action.triggered.connect(self.set_encoding)
+        encoding_menu.addAction(utf8_action)
+        self.encoding_group.addAction(utf8_action)
+
+        euckr_action = QAction('EUC-KR', self, checkable=True)
+        euckr_action.setData('euc-kr')
+        euckr_action.triggered.connect(self.set_encoding)
+        encoding_menu.addAction(euckr_action)
+        self.encoding_group.addAction(euckr_action)
         
         file_menu.addSeparator()
         
@@ -368,6 +389,12 @@ class EEPCheckerGUI(QMainWindow):
         # 최근 프롬프트 파일 경로 저장용
         self.latest_prompt_paths = []
 
+    def set_encoding(self):
+        action = self.sender()
+        if action and action.isChecked():
+            self.current_encoding = action.data()
+            self.status_label.setText(f"인코딩 설정: {self.current_encoding}")
+
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "프로젝트 폴더 선택")
         if path:
@@ -399,7 +426,7 @@ class EEPCheckerGUI(QMainWindow):
         lines_label = QLabel("파일당 최대 줄 수:")
         lines_spin = QSpinBox()
         lines_spin.setRange(100, 10000)
-        lines_spin.setValue(2000)  # 기본값
+        lines_spin.setValue(self.target_lines if self.target_lines else 2000)
         lines_spin.setSingleStep(100)
         
         lines_layout.addWidget(lines_label)
@@ -462,7 +489,7 @@ class EEPCheckerGUI(QMainWindow):
         # 분석 시작 전에 최근 항목에 추가
         self.add_recent_item()
 
-        self.status_label.setText('분석 시작...')
+        self.status_label.setText(f'분석 시작... (인코딩: {self.current_encoding})')
         self.setEnabled(False)
         self.progress_bar.show()  # 진행바 표시
         self.progress_bar.setValue(0)
@@ -475,7 +502,8 @@ class EEPCheckerGUI(QMainWindow):
                 'to': self.to_input.text(),
                 'path': self.path_input.text()
             },
-            target_lines=self.target_lines
+            target_lines=self.target_lines,
+            encoding=self.current_encoding
         )
         
         # 시그널 연결
@@ -511,7 +539,7 @@ class EEPCheckerGUI(QMainWindow):
             self.status_label.setText('프롬프트가 클립보드에 복사되었습니다')
         except Exception as e:
             QMessageBox.warning(self, "복사 오류", 
-                              f"프롬프트 복사 중 오류가 발생했습니다: {str(e)}",
+                              f"{str(e)}",
                               QMessageBox.StandardButton.Ok)
 
     def show_help(self):
@@ -528,6 +556,7 @@ DX하는 회사에서 API도 안주는 ~
 
 <p><b>주요 기능</b></p>
 • C 코드에서 ENUM 사용 위치 검색<br>
+• 소스 코드 인코딩 설정 (UTF-8, EUC-KR)<br>
 • HTML 형식의 분석 보고서 생성<br>
 • LLM 프롬프트 자동 생성<br>
 • 프롬프트 자동 분할 기능<br>
@@ -541,8 +570,9 @@ DX하는 회사에서 API도 안주는 ~
    - 직접 경로 입력/복사<br>
    - 폴더 드래그 & 드롭<br>
    - 찾아보기 버튼 사용<br>
-4. 필요시 프롬프트 분할 설정 (파일 메뉴)<br>
-5. '분석 시작' 버튼 클릭
+4. 필요시 소스 코드 인코딩 설정 (파일 메뉴 > 인코딩)<br>
+5. 필요시 프롬프트 분할 설정 (파일 메뉴 > 프롬프트 분할 설정)<br>
+6. '분석 시작' 버튼 클릭
 
 <p><b>결과 확인</b></p>
 • HTML 보고서가 자동으로 브라우저에서 열림<br>
@@ -607,6 +637,10 @@ DX하는 회사에서 API도 안주는 ~
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     items = json.load(f)
+                # 이전 버전 호환성을 위해 encoding 필드가 없는 경우 utf-8로 기본값 설정
+                for item in items:
+                    if 'encoding' not in item:
+                        item['encoding'] = 'utf-8'
                 return items
         except Exception:
             pass
@@ -628,7 +662,8 @@ DX하는 회사에서 API도 안주는 ~
             'from': self.from_input.text(),
             'to': self.to_input.text(),
             'path': self.path_input.text(),
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'encoding': self.current_encoding
         }
         
         # 동일한 항목이 있으면 제거
@@ -660,7 +695,8 @@ DX하는 회사에서 API도 안주는 ~
             enum_name = item['enum']
             path = os.path.basename(item['path'])
             timestamp = item.get('timestamp', '날짜 없음')
-            text = f"{enum_name} ({path}) - {timestamp}"
+            encoding = item.get('encoding', 'utf-8')
+            text = f"{enum_name} ({path}) - {timestamp} [{encoding}]"
             
             action = QAction(text, self)
             action.setData(item)  # 항목 데이터 저장
@@ -680,6 +716,15 @@ DX하는 회사에서 API도 안주는 ~
         self.from_input.setText(item['from'])
         self.to_input.setText(item['to'])
         self.path_input.setText(item['path'])
+        
+        # 인코딩 설정 복원
+        loaded_encoding = item.get('encoding', 'utf-8')
+        self.current_encoding = loaded_encoding
+        for act in self.encoding_group.actions():
+            if act.data() == loaded_encoding:
+                act.setChecked(True)
+                break
+        self.status_label.setText(f"최근 항목 로드됨. 인코딩: {self.current_encoding}")
 
     def clear_recent_items(self):
         """최근 항목 모두 지우기"""
@@ -741,6 +786,12 @@ DX하는 회사에서 API도 안주는 ~
         finally:
             self.setEnabled(True)
             self.progress_bar.hide()
+            # 분석 완료 후 상태 메시지 (성공/실패에 따라 다르게)
+            if not error_logs and prompt_files:
+                self.status_label.setText(f"분석 완료 (인코딩: {self.current_encoding})")
+            elif not error_logs and not prompt_files:
+                self.status_label.setText(f"분석 완료: 일치 항목 없음 (인코딩: {self.current_encoding})")
+            # 에러가 있으면 analysis_error에서 이미 '오류 발생'으로 설정됨
 
 def main():
     app = QApplication(sys.argv)

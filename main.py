@@ -39,6 +39,7 @@ def main(progress_callback=None):
     argp.add_argument('--from', dest='from_value', required=True, help='변경 전 ENUM 값')
     argp.add_argument('--to', dest='to_value', required=True, help='변경 후 ENUM 값')
     argp.add_argument('--path', required=True, help='분석할 C 프로젝트 폴더 경로')
+    argp.add_argument('--encoding', default='utf-8', help='소스 파일 인코딩 (기본값: utf-8)')
     argp.add_argument('--debug', action='store_true', help='디버그 정보 출력')
     argp.add_argument('--query', action='store_true', help='쿼리 기반 방식 사용(실험적)')
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
@@ -52,7 +53,7 @@ def main(progress_callback=None):
         log_error(f"[Error] 지정된 경로가 디렉터리가 아닙니다: {args.path}")
         return [], error_logs
 
-    update_progress("C, H 파일 검색 중...", 0)
+    update_progress(f"C, H 파일 검색 중 (인코딩: {args.encoding})...", 0)
     c_files = find_c_files(args.path)
     if not c_files:
         log_error(f"[Warning] 지정된 경로에서 C/H 파일을 찾을 수 없습니다: {args.path}")
@@ -69,18 +70,13 @@ def main(progress_callback=None):
         rel_path = os.path.relpath(cfile, args.path)
         update_progress(f"C, H 파일 분석 중... ({i}/{total_files})", progress)
         
-        # 파일 읽기 시도
+        # 파일 읽기 시도 (지정된 인코딩 사용)
         try:
-            with open(cfile, encoding='utf-8') as f:
+            with open(cfile, 'r', encoding=args.encoding, errors='strict') as f:
                 code = f.read()
-        except UnicodeDecodeError:
-            try:
-                with open(cfile, encoding='latin1', errors='ignore') as f:
-                    code = f.read()
-                log_error(f"[Warning] UTF-8 디코딩 실패, latin1으로 읽기 시도: {rel_path}")
-            except Exception as e:
-                log_error(f"[Error] 파일 읽기 실패: {rel_path} → {str(e)}")
-                continue
+        except UnicodeDecodeError as e:
+            log_error(f"[Error] 파일 읽기 실패 ({args.encoding} 인코딩): {rel_path} → {str(e)}")
+            continue
         except Exception as e:
             log_error(f"[Error] 파일 읽기 실패: {rel_path} → {str(e)}")
             continue
@@ -107,7 +103,7 @@ def main(progress_callback=None):
             llm_prompts.append(prompt)
 
     if not all_results:
-        log_error(f"[Warning] ENUM '{args.enum}'을 사용하는 함수를 찾을 수 없습니다.")
+        log_error(f"[Warning] ENUM '{args.enum}'을(를) 사용하는 함수를 찾을 수 없습니다.")
         return [], error_logs
 
     # outputs 폴더 생성
