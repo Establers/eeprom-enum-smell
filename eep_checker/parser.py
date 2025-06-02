@@ -84,35 +84,63 @@ def debug_print_function_node(node, code, depth=0, debug=False):
 def extract_functions_with_enum(node, code, target_enum, debug=False):
     results = []
     
-    # 함수 정의나 구조체 정의인 경우
-    if node.type in ['function_definition', 'struct_specifier']:
+    # (1) 검사 대상 노드 타입에 'declaration'을 추가
+    if node.type in ['function_definition', 'struct_specifier', 'declaration']:
         if debug:
             print("\nNode Structure:")
             debug_print_function_node(node, code, debug=debug)
         
-        # 이름 찾기
         name = None
+        node_code = None
+        
         if node.type == 'function_definition':
+            # 기존과 동일하게 함수 이름 찾기
             declarator = node.child_by_field_name('declarator')
             if declarator:
                 name = find_identifier_in_declarator(declarator, code)
+        
         elif node.type == 'struct_specifier':
+            # 기존과 동일하게 struct 이름 찾기
             name_node = node.child_by_field_name('name')
             if name_node:
                 name = code[name_node.start_byte:name_node.end_byte].decode(errors='ignore')
             else:
-                # typedef struct의 경우 이름이 없을 수 있음
                 name = "(anonymous struct)"
         
+        elif node.type == 'declaration':
+            # (2) 전역 선언(declaration)에서 식별자(변수명) 찾기
+            #   보통 declaration → init_declarator → declarator → identifier 구조
+            #   예를 들어 'enum Foo g = FOO;' 라면
+            #   declaration 밑에 init_declarator 노드가 있음.
+            #   init_declarator.child_by_field_name('declarator')를 타고 identifier를 뽑아본다.
+            init_decl = node.child_by_field_name('init_declarator')
+            if init_decl:
+                decl = init_decl.child_by_field_name('declarator')
+            else:
+                # init_declarator가 없으면, 단순 선언(declarator만 있는 경우)일 수도 있다.
+                decl = node.child_by_field_name('declarator')
+            
+            if decl:
+                name = find_identifier_in_declarator(decl, code)
+            
+            # 전역 선언부 전체 코드를 저장하고 싶으면 아래처럼 추출
+            node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
+        
+        # (3) enum 사용 유무와 개수 세기 (함수/struct와 동일 로직 재사용)
         found, enum_count = has_enum_in_function(node, code, target_enum)
         if found:
-            node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            # 함수나 struct의 경우, node_code를 따로 추출하는 코드가 없었으므로
+            # 여기도 미리 선언해 두었던 node_code가 None이면 전체 범위에서 추출
+            if node_code is None:
+                node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            
             results.append({
                 'func_name': name or '(이름없음)',
                 'code': node_code,
                 'enum_count': enum_count
             })
     
+    # (4) 재귀적으로 자식 노드 탐색
     for child in node.children:
         results.extend(extract_functions_with_enum(child, code, target_enum, debug=debug))
     return results
