@@ -79,6 +79,9 @@ class AnalyzerThread(QThread):
             
             if self.args.get('csv', False):  # CSV 옵션이 켜져있으면 추가
                 sys.argv.append('--csv')
+                
+            if self.args.get('include_headers', False):  # 헤더 파일 포함 옵션이 켜져있으면 추가
+                sys.argv.append('--include-headers')
             
             def progress_callback(status, elapsed, progress=None):
                 """진행 상황 업데이트 콜백"""
