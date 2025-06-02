@@ -12,6 +12,5 @@ def make_llm_prompt(file_name, func_name, enum_name, from_value, to_value, code)
 ```c
 {code}
 ```
-
 """
     return prompt 
