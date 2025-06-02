@@ -123,9 +123,11 @@ def has_enum_in_function(node, code, target_enum):
 
     def visit_node(n):
         nonlocal enum_count
-        
-        if n.type == "ERROR":
-            return
+    
+        # #ifdef 같은 전처리 지시자로 인해서 ERROR 가 발생하는데, 이것도 처리를 해야해서 ㅠㅠ
+        # ERROR 일 때 리턴하고 싶지만 취소...
+        # if n.type == "ERROR":
+        #     return
         
         if n.type in ('comment', 'string_literal', 'string', 'char_literal'):
             return
