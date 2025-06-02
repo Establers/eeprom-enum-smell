@@ -41,7 +41,7 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
             <td title="{html.escape(str(r['file']))}">{html.escape(str(r['file']))}</td>
             <td title="{html.escape(str(r['func_name']))}">{html.escape(str(r['func_name']))}</td>
             <td>{html.escape(str(r['enum_count']))}</td>
-            <td><button class="btn" onclick="toggleCode({i})">보기</button></td>
+            <td><button class="btn toggle-btn" onclick="toggleCode({i})" data-state="closed">보기</button></td>
         </tr>
         <tr id="code_{i}" class="code-row" style="display:none">
             <td colspan="4">
@@ -331,6 +331,14 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
             tr.hidden {{
                 display: none;
             }}
+
+            /* 버튼 상태별 스타일 */
+            .toggle-btn[data-state="closed"] {{
+                background-color: var(--primary);
+            }}
+            .toggle-btn[data-state="opened"] {{
+                background-color: #666;
+            }}
         </style>
     </head>
     <body>
@@ -483,12 +491,16 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
 
         function toggleCode(idx) {{
             const codeRow = document.getElementById(`code_${{idx}}`);
-            if (codeRow.style.display === 'none') {{
-                codeRow.style.display = 'table-row';
+            const btn = document.querySelector(`button[onclick="toggleCode(${{idx}})"]`);
+            const isOpening = codeRow.style.display === 'none';
+            
+            codeRow.style.display = isOpening ? 'table-row' : 'none';
+            btn.textContent = isOpening ? '접기' : '보기';
+            btn.dataset.state = isOpening ? 'opened' : 'closed';
+            
+            if (isOpening) {{
                 // 코드가 표시될 때 Prism.js 하이라이팅 실행
                 Prism.highlightAllUnder(codeRow);
-            }} else {{
-                codeRow.style.display = 'none';
             }}
         }}
 
@@ -507,27 +519,37 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
             for (let i = 0; i < rows.length; i += 2) {{  // 2씩 증가 (코드 행 제외)
                 const cell = rows[i].getElementsByTagName('td')[columnIndex];
                 const cellText = cell.textContent.toLowerCase();
+                const isMatch = cellText.includes(searchText);
                 
-                if (cellText.includes(searchText)) {{
-                    rows[i].classList.remove('hidden');
-                    if (i + 1 < rows.length) {{
-                        rows[i + 1].classList.remove('hidden');
-                    }}
+                // 메인 행 표시/숨김
+                rows[i].classList.toggle('hidden', !isMatch);
+                
+                // 코드 행 처리
+                if (i + 1 < rows.length) {{
+                    const codeRow = rows[i + 1];
+                    const btn = rows[i].querySelector('.toggle-btn');
                     
-                    // 검색어 하이라이트
-                    if (searchText) {{
-                        cell.innerHTML = cell.textContent.replace(
-                            new RegExp(searchText, 'gi'),
-                            match => `<span class="highlight">${{match}}</span>`
-                        );
+                    if (!isMatch) {{
+                        // 검색 결과에 없으면 코드를 접고 행을 숨김
+                        codeRow.style.display = 'none';
+                        codeRow.classList.add('hidden');
+                        if (btn) {{
+                            btn.textContent = '보기';
+                            btn.dataset.state = 'closed';
+                        }}
                     }} else {{
-                        cell.innerHTML = cell.textContent;
+                        codeRow.classList.remove('hidden');
                     }}
+                }}
+                
+                // 검색어 하이라이트
+                if (searchText) {{
+                    cell.innerHTML = cell.textContent.replace(
+                        new RegExp(searchText, 'gi'),
+                        match => `<span class="highlight">${{match}}</span>`
+                    );
                 }} else {{
-                    rows[i].classList.add('hidden');
-                    if (i + 1 < rows.length) {{
-                        rows[i + 1].classList.add('hidden');
-                    }}
+                    cell.innerHTML = cell.textContent;
                 }}
             }}
         }}
