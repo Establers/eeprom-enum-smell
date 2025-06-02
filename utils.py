@@ -144,8 +144,7 @@ def save_split_prompts(content, base_path, target_lines=None):
         list: 저장된 파일 경로 목록
     """
     separator = '\n' + '-' * 12 + '\n'
-    instruction_text = """답변은 함수별로 구분된 섹션”으로, 각 항목마다 핵심만 짧은 문장으로 작성하세요. 
-특히 5번 심각도는 “1점(낮음) ~ 5점(높음)” 중 하나로 표현하거나 “높음/중간/낮음”으로 표시해 주십시오.
+    instruction_text = """답변은 함수별로 구분된 섹션으로 작성해주세요! 5번 심각도는 1점(낮음) ~ 5점(높음)과 별모양으로 표시해 주십시오.
     
 """
 
