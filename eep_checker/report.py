@@ -36,15 +36,20 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
     # 테이블 행 HTML 생성
     table_rows = []
     for i, r in enumerate(results):
+        # ENUM 사용 라인들을 문자열로 변환
+        enum_lines_str = ', '.join(map(str, r['enum_lines']))
+        
         row = f"""
         <tr>
             <td title="{html.escape(str(r['file']))}">{html.escape(str(r['file']))}</td>
             <td title="{html.escape(str(r['func_name']))}">{html.escape(str(r['func_name']))}</td>
             <td>{html.escape(str(r['enum_count']))}</td>
+            <td>{r['start_line']}-{r['end_line']}</td>
+            <td title="ENUM 사용 위치: {enum_lines_str}">{enum_lines_str}</td>
             <td><button class="btn toggle-btn" onclick="toggleCode({i})" data-state="closed">보기</button></td>
         </tr>
         <tr id="code_{i}" class="code-row" style="display:none">
-            <td colspan="4">
+            <td colspan="6">
                 <div class="code-container">
                     <div class="code-preview">
                         <pre class="line-numbers"><code class="language-c">{html.escape(r['code'])}</code></pre>
@@ -383,6 +388,8 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
                                 <th>파일명</th>
                                 <th>함수명</th>
                                 <th style="width:100px">사용 횟수</th>
+                                <th style="width:100px">라인 범위</th>
+                                <th style="width:150px">ENUM 위치</th>
                                 <th style="width:100px">코드 보기</th>
                             </tr>
                         </thead>

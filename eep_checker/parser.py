@@ -95,7 +95,7 @@ def collect_enum_global_vars(root, code, target_enum):
                 for fdecl_item in body_node.children: # field_declaration or comment etc.
                     if fdecl_item.type == 'field_declaration':
                         # 1. field_declaration 전체에서 target_enum 사용 여부 확인
-                        enum_present_in_fdecl, _ = has_enum_in_function(fdecl_item, code, target_enum)
+                        enum_present_in_fdecl, _, _ = has_enum_in_function(fdecl_item, code, target_enum)
                         
                         if enum_present_in_fdecl:
                             # 2. target_enum이 사용되었다면, 이 field_declaration에서 모든 declarator(변수명) 추출
@@ -117,31 +117,30 @@ def has_enum_in_function(node, code, target_enum):
     """
     node 내부에서 (1) target_enum이 직접 등장하는지
     (2) 자식 노드 검사하며 identifier가 target_enum인지 카운트하는 로직.
-    enum_count와 found 여부만 반환(변수는 따로 처리)
+    enum_count와 found 여부, 그리고 ENUM이 사용된 라인 번호 목록을 반환
     """
     enum_count = 0
+    enum_lines = []  # ENUM이 사용된 라인 번호들을 저장
 
     def visit_node(n):
         nonlocal enum_count
     
-        # #ifdef 같은 전처리 지시자로 인해서 ERROR 가 발생하는데, 이것도 처리를 해야해서 ㅠㅠ
-        # ERROR 일 때 리턴하고 싶지만 취소...
-        # if n.type == "ERROR":
-        #     return
-        
         if n.type in ('comment', 'string_literal', 'string', 'char_literal'):
             return
         
         if n.type == 'identifier':
             text = code[n.start_byte:n.end_byte].decode(errors='ignore')
             if text == target_enum:
+                # ENUM이 사용된 라인 번호 계산
+                line_number = code.count(b'\n', 0, n.start_byte) + 1
+                enum_lines.append(line_number)
                 enum_count += 1
         for c in n.children:
             visit_node(c)
 
     visit_node(node)
     found = (enum_count > 0)
-    return found, enum_count
+    return found, enum_count, sorted(enum_lines)  # 라인 번호를 정렬하여 반환
 
 def debug_print_function_node(node, code, depth=0, debug=False):
     if not node or not debug:
@@ -214,8 +213,8 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                 # 함수 내부 선언일 경우, 함수 단위에서만 결과에 남도록 name을 None으로 유지
                 name = None
 
-        # 2) 직접 enum(target_enum) 사용 여부 + 개수
-        found_direct, enum_count_direct = has_enum_in_function(node, code, target_enum)
+        # 2) 직접 enum(target_enum) 사용 여부 + 개수 + 라인 번호
+        found_direct, enum_count_direct, enum_lines = has_enum_in_function(node, code, target_enum)
 
         # 3) enum_vars 목록에 든 변수가 쓰였는지 검사
         found_via_var = False
@@ -237,17 +236,24 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                     visit_for_var(c_node)
             visit_for_var(node)
 
-        # 4) “직접 enum 사용”이나 “enum_vars 통해 사용” 중 하나라도 있으면 결과에 추가
+        # 4) "직접 enum 사용"이나 "enum_vars 통해 사용" 중 하나라도 있으면 결과에 추가
         #    단, name이 None인 경우(== 함수 내부 선언이었다면)에는 추가하지 않음
         if (found_direct or found_via_var) and name:
             node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
+            # 시작/끝 라인 계산
+            start_line = code.count(b'\n', 0, node.start_byte) + 1
+            end_line = start_line + node_code.count('\n')
+            
             results.append({
                 'func_name': name,
                 'code': node_code,
-                'enum_count': enum_count_direct
+                'enum_count': enum_count_direct,
+                'start_line': start_line,
+                'end_line': end_line,
+                'enum_lines': enum_lines  # ENUM이 사용된 라인 번호들 추가
             })
             if debug:
-                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}")
+                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}")
 
     # 5) 하위 노드 재귀 호출 (enum_vars를 그대로 넘겨줌)
     for child_node in node.children:
@@ -319,6 +325,18 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         identifier_tuple = (r.get('func_name'), code_hash, r.get('enum_count'))
         
         if identifier_tuple not in seen_results_hashes:
+            # 라인 번호 계산
+            lines = code.split('\n')
+            start_pos = code.find(code_str)
+            if start_pos != -1:
+                start_line = code[:start_pos].count('\n') + 1
+                end_line = start_line + code_str.count('\n')
+                r['start_line'] = start_line
+                r['end_line'] = end_line
+            else:
+                r['start_line'] = 0
+                r['end_line'] = 0
+            
             unique_results.append(r)
             seen_results_hashes.add(identifier_tuple)
     
@@ -331,7 +349,7 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         if final_results:
             print(f"\nFound {len(final_results)} unique functions/declarations using the target ENUM")
             for res_debug in final_results:
-                print(f"- {res_debug['func_name']} ({res_debug['enum_count']} uses)")
+                print(f"- {res_debug['func_name']} ({res_debug['enum_count']} uses) at lines {res_debug['start_line']}-{res_debug['end_line']}")
         else:
             print("\nNo functions/declarations with target ENUM found")
     return final_results
