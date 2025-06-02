@@ -123,8 +123,13 @@ def has_enum_in_function(node, code, target_enum):
 
     def visit_node(n):
         nonlocal enum_count
-        if n.type in ['comment', 'string_literal']:
+        
+        if n.type == "ERROR":
             return
+        
+        if n.type in ('comment', 'string_literal', 'string', 'char_literal'):
+            return
+        
         if n.type == 'identifier':
             text = code[n.start_byte:n.end_byte].decode(errors='ignore')
             if text == target_enum:
