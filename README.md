@@ -1,94 +1,47 @@
-# ENUM 사용 분석기
+# 🔍 EEPROM ENUM SMELL
 
-C 코드에서 ENUM 값의 사용을 분석하고, 변경에 필요한 LLM 프롬프트를 생성하는 도구입니다.
+안녕하세요! C 코드에서 ENUM 사용을 분석하는 도구예요 ✨
 
-## 주요 기능
+## 💫 이런 거 할 수 있어요
 
-- C 코드에서 ENUM 사용 위치 자동 검색
-- HTML 형식의 분석 보고서 생성
-  - 파일별 ENUM 사용 분포 시각화
-  - 함수별 사용 횟수 및 코드 미리보기
-- LLM 프롬프트 자동 생성
-  - 프롬프트 자동 분할 기능
-  - 클립보드 복사 지원
-- 사용자 친화적인 GUI
-  - 드래그 & 드롭 지원
-  - 실시간 진행 상황 표시
-  - 직관적인 인터페이스
+- 🎯 ENUM 사용 함수 자동 검출
+- 📊 HTML 보고서 생성 (파일/함수별 사용 현황)
+- 📝 CSV 보고서 생성 (선택사항)
+- 🤖 GPT 프롬프트 자동 생성
 
-## 설치 방법
+## 🚀 이렇게 써보세요
 
-1. Python 3.8 이상 설치
-2. 필요한 패키지 설치:
+### 💻 CLI로 쓰기
+
 ```bash
-pip install -r requirements.txt
+python main.py --enum ENUM_NAME --from OLD_VALUE --to NEW_VALUE --path PROJECT_PATH [options]
 ```
 
-## 사용 방법
+옵션들이에요:
+- `--encoding`: 소스 파일 인코딩이요 (기본값: utf-8)
+- `--csv`: CSV 보고서도 만들어드려요
+- `--include-headers`: 헤더 파일(.h)도 포함할까요? (기본: C 파일만)
+- `--target-lines`: 프롬프트 나눌 때 파일당 줄 수
 
-### GUI 모드
+### 🖥️ GUI로 쓰기 (더 쉬워요!)
 
-1. GUI 실행:
 ```bash
 python gui.py
 ```
 
-2. 필요한 정보 입력:
-   - ENUM 이름
-   - 변경 전/후 값
-   - 분석할 프로젝트 폴더 경로
+## 📦 결과물
 
-3. 필요시 프롬프트 분할 설정 (파일 메뉴)
-4. '분석 시작' 버튼 클릭
+- `{ENUM}_Output_{timestamp}.html`: 분석 보고서예요
+- `{ENUM}_Output_{timestamp}.csv`: CSV 보고서 (선택했을 때만)
+- `{ENUM}_LLM_Prompts_{timestamp}.txt`: GPT한테 물어볼 프롬프트
 
-### CLI 모드
+## ⚡ 필요한 것들
 
-```bash
-python main.py --enum ENUM이름 --from 변경전값 --to 변경후값 --path 프로젝트경로 [--target-lines 줄수]
-```
+- Python 3.8 이상
+- PySide6
+- tree-sitter
+- tree-sitter-languages
 
-#### 옵션 설명
-- `--enum`: 찾으려는 ENUM 이름
-- `--from`: 변경 전 ENUM 값
-- `--to`: 변경 후 ENUM 값
-- `--path`: 분석할 C 프로젝트 폴더 경로
-- `--target-lines`: 프롬프트 분할 시 파일당 목표 줄 수 (선택사항)
-- `--debug`: 디버그 정보 출력 (선택사항)
-- `--query`: 쿼리 기반 방식 사용 (실험적 기능)
+## 📜 라이선스
 
-## 단축키
-
-- 분석 시작: `Ctrl+R`
-- 프로그램 종료: `Ctrl+Q`, `Alt+F4`, `Ctrl+W`
-
-## 결과물
-
-1. HTML 보고서
-   - 파일별 ENUM 사용 분포 차트
-   - 함수별 상세 정보 및 코드 보기
-   - 자동으로 브라우저에서 열림
-
-2. LLM 프롬프트
-   - 자동으로 파일 생성
-   - 필요시 여러 파일로 분할
-   - 클립보드로 복사 가능
-
-## 개발 정보
-
-- 개발자: 박재환
-- 언어: Python
-- GUI 프레임워크: PySide6
-- 코드 분석: tree-sitter
-
-
----
-<p>이 프로그램은 다음 오픈소스 라이브러리를 사용합니다.<br>
-라이선스 전문은 설치 폴더의 <code>LICENSES</code> 디렉터리에서 확인하실 수 있습니다.</p>
-
-<table>
-<tr><td>PySide6</td><td>LGPL v3</td></tr>
-<tr><td>tree-sitter</td><td>MIT</td></tr>
-<tr><td>tree-sitter-languages</td><td>MIT</td></tr>
-<tr><td>D3.js</td><td>BSD 3-Clause</td></tr>
-<tr><td>Prism.js</td><td>MIT</td></tr>
-</table>
+MIT License로 자유롭게 써주세요! 💝
