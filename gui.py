@@ -53,7 +53,7 @@ class AnalyzerThread(QThread):
     """분석 작업을 수행하는 스레드"""
     progress = Signal(str, float)  # 진행 상황과 경과 시간을 전달하는 시그널
     progress_value = Signal(int)  # 진행률을 전달하는 시그널 (0-100)
-    finished = Signal(list)  # 완료 시 프롬프트 파일 목록을 전달하는 시그널
+    finished = Signal(list, list)  # 완료 시 프롬프트 파일 목록과 에러 로그를 전달하는 시그널
     error = Signal(str)  # 에러 메시지를 전달하는 시그널
 
     def __init__(self, args, target_lines):
@@ -81,8 +81,8 @@ class AnalyzerThread(QThread):
                 if progress is not None:
                     self.progress_value.emit(progress)
             
-            prompt_files = eep_checker.main(progress_callback=progress_callback)
-            self.finished.emit(prompt_files)
+            prompt_files, error_logs = eep_checker.main(progress_callback=progress_callback)
+            self.finished.emit(prompt_files, error_logs)
             
         except Exception as e:
             self.error.emit(str(e))
@@ -364,6 +364,9 @@ class EEPCheckerGUI(QMainWindow):
         # 프롬프트 분할 설정 초기값
         self.target_lines = None  # 기본적으로 분할하지 않음
 
+        # 최근 프롬프트 파일 경로 저장용
+        self.latest_prompt_paths = []
+
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "프로젝트 폴더 선택")
         if path:
@@ -472,48 +475,6 @@ class EEPCheckerGUI(QMainWindow):
         self.status_label.setText('오류 발생')
         self.setEnabled(True)
         self.progress_bar.hide()
-
-    def analysis_finished(self, prompt_files):
-        """분석 완료 시 처리"""
-        try:
-            # 결과 파일 찾기
-            enum_name = self.enum_input.text()
-            output_dir = 'outputs'
-            html_files = [f for f in os.listdir(output_dir) 
-                         if f.startswith(f"{enum_name}_Output_") and f.endswith('.html')]
-            
-            if html_files and prompt_files:
-                html_path = os.path.abspath(os.path.join(output_dir, sorted(html_files)[-1]))
-                all_prompt_paths = [os.path.abspath(p) for p in prompt_files]
-                
-                # 결과 표시
-                result_text = f"분석 완료!\nHTML: {html_path}\n"
-                if len(all_prompt_paths) > 1:
-                    result_text += "프롬프트 파일:\n"
-                    for path in sorted(all_prompt_paths):
-                        result_text += f"{path}\n"
-                else:
-                    result_text += f"프롬프트: {all_prompt_paths[0]}"
-                
-                self.result_text.setText(result_text)
-                
-                # 복사 버튼 활성화
-                self.copy_btn.setEnabled(True)
-                
-                # 최신 프롬프트 파일들 저장
-                self.latest_prompt_paths = sorted(all_prompt_paths)
-                
-                # HTML 파일 브라우저로 열기
-                webbrowser.open(f'file://{html_path}')
-        
-        except Exception as e:
-            QMessageBox.critical(self, "오류", f"결과 처리 중 오류가 발생했습니다: {str(e)}",
-                               QMessageBox.StandardButton.Ok)
-            self.status_label.setText('오류 발생')
-        
-        finally:
-            self.setEnabled(True)
-            self.progress_bar.hide()
 
     def copy_prompt(self):
         """모든 프롬프트 내용을 순서대로 합쳐서 복사"""
@@ -702,6 +663,61 @@ DX하는 회사에서 API도 안주는 ~
         self.recent_items = []
         self.save_recent_items()
         self.update_recent_menu()
+
+    def analysis_finished(self, prompt_files, error_logs):
+        """분석 완료 시 처리"""
+        try:
+            # 결과 텍스트 초기화
+            result_text = []
+
+            # 에러/경고 메시지 추가
+            if error_logs:
+                result_text.append("=== 경고/에러 메시지 ===")
+                result_text.extend(error_logs)
+                result_text.append("")
+
+            # 결과 파일 정보 추가
+            if prompt_files:
+                # HTML 파일 찾기
+                enum_name = self.enum_input.text()
+                output_dir = 'outputs'
+                html_files = [f for f in os.listdir(output_dir) 
+                            if f.startswith(f"{enum_name}_Output_") and f.endswith('.html')]
+                
+                if html_files:
+                    html_path = os.path.abspath(os.path.join(output_dir, sorted(html_files)[-1]))
+                    all_prompt_paths = [os.path.abspath(p) for p in prompt_files]
+                    
+                    result_text.append("=== 생성된 파일 ===")
+                    result_text.append(f"HTML: {html_path}")
+                    
+                    if len(all_prompt_paths) > 1:
+                        result_text.append("프롬프트 파일:")
+                        for path in sorted(all_prompt_paths):
+                            result_text.append(f"- {path}")
+                    else:
+                        result_text.append(f"프롬프트: {all_prompt_paths[0]}")
+                    
+                    # 복사 버튼 활성화
+                    self.copy_btn.setEnabled(True)
+                    
+                    # 최신 프롬프트 파일들 저장
+                    self.latest_prompt_paths = sorted(all_prompt_paths)
+                    
+                    # HTML 파일 브라우저로 열기
+                    webbrowser.open(f'file://{html_path}')
+            
+            # 결과 텍스트 설정
+            self.result_text.setText('\n'.join(result_text))
+            
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"결과 처리 중 오류가 발생했습니다: {str(e)}",
+                               QMessageBox.StandardButton.Ok)
+            self.status_label.setText('오류 발생')
+        
+        finally:
+            self.setEnabled(True)
+            self.progress_bar.hide()
 
 def main():
     app = QApplication(sys.argv)

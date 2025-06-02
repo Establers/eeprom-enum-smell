@@ -132,7 +132,7 @@ def find_c_files(root_dir):
     c_files = []
     for dirpath, _, filenames in os.walk(root_dir):
         for f in filenames:
-            if f.endswith('.c'):
+            if f.endswith(('.c', '.h')):
                 c_files.append(os.path.join(dirpath, f))
     return c_files
 
@@ -144,14 +144,22 @@ def main(progress_callback=None):
     Args:
         progress_callback (callable, optional): 진행 상황을 알려주는 콜백 함수.
             callback(status: str, elapsed: float, progress: int) 형식으로 호출됨.
+    Returns:
+        tuple: (prompt_files, error_logs) - 생성된 프롬프트 파일 목록과 에러 로그 목록
     """
     start_time = time.time()
+    error_logs = []
     
     def update_progress(status, progress=None):
         """진행 상황 업데이트"""
         if progress_callback:
             elapsed = time.time() - start_time
             progress_callback(status, elapsed, progress)
+
+    def log_error(message):
+        """에러 로깅"""
+        error_logs.append(message)
+        print(message)
 
     argp = argparse.ArgumentParser(description='EEPROM ENUM 영향 함수 분석기')
     argp.add_argument('--enum', required=True, help='찾으려는 ENUM 이름')
@@ -163,9 +171,21 @@ def main(progress_callback=None):
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
     args = argp.parse_args()
 
-    update_progress("C 파일 검색 중...", 0)
+    # 경로 검증
+    if not os.path.exists(args.path):
+        log_error(f"[Error] 지정된 경로가 존재하지 않습니다: {args.path}")
+        return [], error_logs
+    if not os.path.isdir(args.path):
+        log_error(f"[Error] 지정된 경로가 디렉터리가 아닙니다: {args.path}")
+        return [], error_logs
+
+    update_progress("C, H 파일 검색 중...", 0)
     c_files = find_c_files(args.path)
-    print(f"총 {len(c_files)}개의 C 파일을 찾았습니다.")
+    if not c_files:
+        log_error(f"[Warning] 지정된 경로에서 C/H 파일을 찾을 수 없습니다: {args.path}")
+        return [], error_logs
+    
+    print(f"총 {len(c_files)}개의 C, H 파일을 찾았습니다.")
 
     all_results = []
     llm_prompts = []
@@ -173,16 +193,37 @@ def main(progress_callback=None):
     total_files = len(c_files)
     for i, cfile in enumerate(c_files, 1):
         progress = int((i / total_files) * 100)
-        update_progress(f"C 파일 분석 중... ({i}/{total_files})", progress)
+        rel_path = os.path.relpath(cfile, args.path)
+        update_progress(f"C, H 파일 분석 중... ({i}/{total_files})", progress)
         
-        with open(cfile, encoding='utf-8', errors='ignore') as f:
-            code = f.read()
-        parser_results = parser.extract_functions_with_enum_file(
-            code, args.enum, 
-            file_name=os.path.relpath(cfile, args.path),
-            debug=args.debug,
-            query_mode=args.query
-        )
+        # 파일 읽기 시도
+        try:
+            with open(cfile, encoding='utf-8') as f:
+                code = f.read()
+        except UnicodeDecodeError:
+            try:
+                with open(cfile, encoding='latin1', errors='ignore') as f:
+                    code = f.read()
+                log_error(f"[Warning] UTF-8 디코딩 실패, latin1으로 읽기 시도: {rel_path}")
+            except Exception as e:
+                log_error(f"[Error] 파일 읽기 실패: {rel_path} → {str(e)}")
+                continue
+        except Exception as e:
+            log_error(f"[Error] 파일 읽기 실패: {rel_path} → {str(e)}")
+            continue
+
+        # 파싱 시도
+        try:
+            parser_results = parser.extract_functions_with_enum_file(
+                code, args.enum, 
+                file_name=rel_path,
+                debug=args.debug,
+                query_mode=args.query
+            )
+        except Exception as e:
+            log_error(f"[Warning] 파일 파싱 실패: {rel_path} → {str(e)}")
+            continue
+
         for r in parser_results:
             all_results.append(r)
             if args.debug:
@@ -192,29 +233,41 @@ def main(progress_callback=None):
             )
             llm_prompts.append(prompt)
 
+    if not all_results:
+        log_error(f"[Warning] ENUM '{args.enum}'을 사용하는 함수를 찾을 수 없습니다.")
+        return [], error_logs
+
     # outputs 폴더 생성
     output_dir = 'outputs'
     os.makedirs(output_dir, exist_ok=True)
 
     update_progress("HTML 보고서 생성 중...", 95)
-    # HTML 보고서 저장
-    save_html_report(args.enum, all_results, output_dir=output_dir)
+    try:
+        # HTML 보고서 저장
+        save_html_report(args.enum, all_results, output_dir=output_dir)
+    except Exception as e:
+        log_error(f"[Error] HTML 보고서 생성 실패 → {str(e)}")
+        return [], error_logs
 
     update_progress("프롬프트 파일 생성 중...", 98)
-    # LLM 프롬프트 저장 (분할 포함)
-    import datetime
-    now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    base_prompt_path = os.path.join(output_dir, f"{args.enum}_LLM_Prompts_{now}.txt")
-    
-    # 모든 프롬프트를 하나의 문자열로 결합
-    separator = '\n' + '-' * 12 + '\n'
-    combined_prompts = separator.join(llm_prompts)
-    if combined_prompts:  # 프롬프트가 있는 경우에만 구분자 추가
-        combined_prompts = separator + combined_prompts + separator
-    
-    # 프롬프트 분할 저장
-    prompt_files = save_split_prompts(combined_prompts, base_prompt_path, args.target_lines)
-    
+    try:
+        # LLM 프롬프트 저장 (분할 포함)
+        import datetime
+        now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        base_prompt_path = os.path.join(output_dir, f"{args.enum}_LLM_Prompts_{now}.txt")
+        
+        # 모든 프롬프트를 하나의 문자열로 결합
+        separator = '\n' + '-' * 12 + '\n'
+        combined_prompts = separator.join(llm_prompts)
+        if combined_prompts:  # 프롬프트가 있는 경우에만 구분자 추가
+            combined_prompts = separator + combined_prompts + separator
+        
+        # 프롬프트 분할 저장
+        prompt_files = save_split_prompts(combined_prompts, base_prompt_path, args.target_lines)
+    except Exception as e:
+        log_error(f"[Error] 프롬프트 파일 생성 실패 → {str(e)}")
+        return [], error_logs
+
     # 결과 출력
     if len(prompt_files) > 1:
         print(f"프롬프트가 {len(prompt_files)}개 파일로 분할되어 저장되었습니다:")
@@ -227,7 +280,7 @@ def main(progress_callback=None):
     update_progress(f"분석 완료! (총 {elapsed:.1f}초)", 100)
     print(f"총 수행 시간: {elapsed:.2f}초")
     
-    return prompt_files
+    return prompt_files, error_logs
 
 if __name__ == '__main__':
     main()
