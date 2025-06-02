@@ -630,7 +630,7 @@ class EEPCheckerGUI(QMainWindow):
 <p><b>프로그램 소개</b></p>
 C 코드에서 특정 ENUM 값 분석하는 도구에요.<br>
 ENUM 값 변경 시 영향을 받는 함수들을 찾아서<br>
-검토에 필요한 프롬프트를 생성해요.<br><br>
+검토에 필요한 프롬프트를 생성해요.<br>
 
 어쨌든 단순 사용 함수 긁어오는 거에요.<br>
 LLM API 없으니까 직접 넣어서 써야해요.<br>
@@ -638,17 +638,17 @@ API 주면 구현할게요~!<br>
 AX DX 하자면서 API 하나 안줘~!
 
 <p><b>사용법</b></p>
-1. 검토할 ENUM 값 적고<br>
+1. 검토할 ENUM 값 적고..(다른것도 되긴 됨)<br>
 2. 변경 전/후 값 적고<br>
 3. 분석 시작<br>
 4. HTML 파일 보고 대충 이렇구나 보고<br>
-5. txt 파일이나 복사한 프롬프트 가지고 GPT한테 처리
+5. txt 파일이나 복사한 프롬프트 가지고 GPT한테 처리<br>
 
 <p><b>단축키</b></p>
 • 분석 시작: Ctrl+R<br>
 • 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W<br>
 <br>
-이게 정식프로세스는 절대 안되길 바라며 ^~^
+재미로 한번 써보세요 ^~^
 """
         msg = QMessageBox(self)
         msg.setWindowTitle("프로그램 정보")
@@ -671,13 +671,11 @@ AX DX 하자면서 API 하나 안줘~!
 <h3>오픈소스 라이브러리 정보</h3>
 
 이 프로그램은 다음의 오픈소스 라이브러리들을 사용합니다:<br>
-
 • PySide6 (Qt for Python) - LGPL v3<br>
 • tree-sitter - MIT<br>
 • tree-sitter-languages - MIT<br>
 • D3.js - BSD 3-Clause<br>
 • Prism.js - MIT<br>
-
 <p><small>상세한 라이센스 정보는 프로그램의 LICENSE 파일을 참조하시기 바랍니다.</small></p>
 """
         msg = QMessageBox(self)
