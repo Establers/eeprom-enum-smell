@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
 from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont
 import main as eep_checker
+from utils import find_c_files
 
 def load_fonts():
     """외부 폰트 로드"""
@@ -438,7 +439,7 @@ class EEPCheckerGUI(QMainWindow):
 
         # 경로 검증 (main.py의 find_c_files 함수를 통해)
         try:
-            eep_checker.find_c_files(self.path_input.text())
+            find_c_files(self.path_input.text())
         except ValueError as e:
             msg = QMessageBox(self)
             if self.app_icon:
