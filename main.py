@@ -3,12 +3,37 @@ import os
 import time
 from eep_checker import parser
 from eep_checker.report import save_html_report
+from eep_checker.csv_report import save_csv_report
 from eep_checker.prompt import make_llm_prompt
-from utils import find_c_files, save_split_prompts
+from utils import find_c_files, save_split_prompts, get_analysis_stats, print_analysis_stats
 
+def get_analysis_stats(enum_name: str, results: list) -> dict:
+    """분석 결과의 통계 정보를 반환합니다.
+    
+    Args:
+        enum_name (str): 분석한 ENUM 이름
+        results (list): 분석 결과 리스트
+    
+    Returns:
+        dict: 통계 정보를 담은 딕셔너리
+    """
+    total_files = len(set(r['file'] for r in results))
+    total_funcs = len(results)
+    total_enums = sum(r['enum_count'] for r in results)
+    
+    return {
+        'enum_name': enum_name,
+        'total_files': total_files,
+        'total_funcs': total_funcs,
+        'total_enums': total_enums
+    }
 
-
-
+def print_analysis_stats(stats: dict):
+    """분석 통계를 출력합니다."""
+    print(f"\n=== {stats['enum_name']} 분석 결과 ===")
+    print(f"분석 파일 수: {stats['total_files']}")
+    print(f"함수 수: {stats['total_funcs']}")
+    print(f"ENUM 사용 총 횟수: {stats['total_enums']}\n")
 
 def main(progress_callback=None):
     """
@@ -43,6 +68,7 @@ def main(progress_callback=None):
     argp.add_argument('--debug', action='store_true', help='디버그 정보 출력')
     argp.add_argument('--query', action='store_true', help='쿼리 기반 방식 사용(실험적)')
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
+    argp.add_argument('--csv', action='store_true', help='분석 결과를 CSV 파일로도 저장')
     args = argp.parse_args()
 
     # 경로 검증
@@ -106,6 +132,10 @@ def main(progress_callback=None):
         log_error(f"[Warning] ENUM '{args.enum}'을(를) 사용하는 함수를 찾을 수 없습니다.")
         return [], error_logs
 
+    # 통계 정보 수집 및 출력
+    stats = get_analysis_stats(args.enum, all_results)
+    print_analysis_stats(stats)
+
     # outputs 폴더 생성
     output_dir = 'outputs'
     os.makedirs(output_dir, exist_ok=True)
@@ -114,6 +144,14 @@ def main(progress_callback=None):
     try:
         # HTML 보고서 저장
         save_html_report(args.enum, all_results, output_dir=output_dir)
+        
+        # CSV 보고서 저장 (--csv 옵션이 있을 때만)
+        if args.csv:
+            update_progress("CSV 보고서 생성 중...", 97)
+            try:
+                save_csv_report(args.enum, all_results, output_dir=output_dir)
+            except Exception as e:
+                log_error(f"[Error] CSV 보고서 생성 실패 → {str(e)}")
     except Exception as e:
         log_error(f"[Error] HTML 보고서 생성 실패 → {str(e)}")
         return [], error_logs

@@ -77,6 +77,9 @@ class AnalyzerThread(QThread):
             if self.target_lines is not None:
                 sys.argv.extend(['--target-lines', str(self.target_lines)])
             
+            if self.args.get('csv', False):  # CSV 옵션이 켜져있으면 추가
+                sys.argv.append('--csv')
+            
             def progress_callback(status, elapsed, progress=None):
                 """진행 상황 업데이트 콜백"""
                 self.progress.emit(status, elapsed)
@@ -111,6 +114,9 @@ class EEPCheckerGUI(QMainWindow):
         self.recent_items = self.load_recent_items()
         self.current_encoding = 'utf-8'
         
+        # CSV 출력 옵션 상태 추가
+        self.csv_enabled = False
+        
         # 메뉴바 생성
         menubar = self.menuBar()
         
@@ -123,6 +129,15 @@ class EEPCheckerGUI(QMainWindow):
         file_menu.addMenu(self.recent_menu)
         
         file_menu.addSeparator()
+        
+        # 출력 설정 메뉴 추가
+        output_menu = file_menu.addMenu('출력 설정')
+        
+        # CSV 출력 액션
+        self.csv_action = QAction('CSV 파일 생성', self, checkable=True)
+        self.csv_action.setChecked(self.csv_enabled)
+        self.csv_action.triggered.connect(self.toggle_csv_output)
+        output_menu.addAction(self.csv_action)
         
         # 인코딩 설정 메뉴 추가
         encoding_menu = file_menu.addMenu('인코딩')
@@ -287,12 +302,12 @@ class EEPCheckerGUI(QMainWindow):
         
         browse_btn = QPushButton("찾기")
         browse_btn.setObjectName("browse")
-        browse_btn.setFixedWidth(40)  # 버튼 너비 축소
+        browse_btn.setFixedWidth(50)  # 너비 증가
         browse_btn.clicked.connect(self.browse_path)
         
         open_btn = QPushButton("열기")
         open_btn.setObjectName("browse")
-        open_btn.setFixedWidth(40)  # 버튼 너비 축소
+        open_btn.setFixedWidth(50)  # 동일한 너비 적용
         open_btn.clicked.connect(self.open_path)
         
         path_buttons.addWidget(browse_btn)
@@ -471,7 +486,7 @@ class EEPCheckerGUI(QMainWindow):
         lines_widget = QWidget()
         lines_layout = QHBoxLayout(lines_widget)
         
-        lines_label = QLabel("파일당 최대 줄 수:")
+        lines_label = QLabel("Max Lines:")
         lines_spin = QSpinBox()
         lines_spin.setRange(100, 10000)
         lines_spin.setValue(self.target_lines if self.target_lines else 2000)
@@ -490,6 +505,11 @@ class EEPCheckerGUI(QMainWindow):
         else:
             self.split_settings_action.setChecked(False)
             self.target_lines = None
+
+    def toggle_csv_output(self):
+        """CSV 출력 옵션 토글"""
+        self.csv_enabled = self.csv_action.isChecked()
+        self.status_label.setText(f"CSV 출력: {'켜짐' if self.csv_enabled else '꺼짐'}")
 
     def analyze(self):
         if not all([self.enum_input.text(), self.from_input.text(), 
@@ -548,7 +568,8 @@ class EEPCheckerGUI(QMainWindow):
                 'enum': self.enum_input.text(),
                 'from': self.from_input.text(),
                 'to': self.to_input.text(),
-                'path': self.path_input.text()
+                'path': self.path_input.text(),
+                'csv': self.csv_enabled  # CSV 옵션 추가
             },
             target_lines=self.target_lines,
             encoding=self.current_encoding
@@ -595,42 +616,27 @@ class EEPCheckerGUI(QMainWindow):
 <h3>eeprom enum smell</h3>
 
 <p><b>프로그램 소개</b></p>
-C 코드에서 특정 ENUM 값의 사용을 분석하는 도구입니다.<br>
-ENUM 값 변경 시 영향을 받는 함수들을 찾아내고,<br>
-검토에 필요한 프롬프트를 생성합니다.<br>
-단순 사용 함수 긁어오는 겁니다.<br>
-LLM API 없으니까 직접 넣어서 써야합니다.<br>
-DX하는 회사에서 API도 안주는 ~
+C 코드에서 특정 ENUM 값 분석하는 도구에요.<br>
+ENUM 값 변경 시 영향을 받는 함수들을 찾아서<br>
+검토에 필요한 프롬프트를 생성해요.<br><br>
 
-<p><b>주요 기능</b></p>
-• C 코드에서 ENUM 사용 위치 검색<br>
-• 소스 코드 인코딩 설정 (UTF-8, EUC-KR)<br>
-• HTML 형식의 분석 보고서 생성<br>
-• LLM 프롬프트 자동 생성<br>
-• 프롬프트 자동 분할 기능<br>
-• 실시간 진행 상황 표시<br>
-• 드래그 & 드롭 지원
+어쨌든 단순 사용 함수 긁어오는 거에요.<br>
+LLM API 없으니까 직접 넣어서 써야해요.<br>
+API 주면 구현할게요~!<br>
+AX DX 하자면서 API 하나 안줘~!
 
-<p><b>사용 방법</b></p>
-1. ENUM 이름 입력<br>
-2. 변경하려는 ENUM 값 입력 (변경 전/후)<br>
-3. 분석할 프로젝트 폴더 선택<br>
-   - 직접 경로 입력/복사<br>
-   - 폴더 드래그 & 드롭<br>
-   - 찾아보기 버튼 사용<br>
-4. 필요시 소스 코드 인코딩 설정 (파일 메뉴 > 인코딩)<br>
-5. 필요시 프롬프트 분할 설정 (파일 메뉴 > 프롬프트 분할 설정)<br>
-6. '분석 시작' 버튼 클릭
-
-<p><b>결과 확인</b></p>
-• HTML 보고서가 자동으로 브라우저에서 열림<br>
-• 프롬프트 내용은 클립보드로 복사 가능<br>
-• 분할된 프롬프트는 자동으로 여러 파일로 저장<br>
-• 실시간으로 진행 상황과 소요 시간 확인 가능<br>
+<p><b>사용법</b></p>
+1. 검토할 ENUM 값 적고<br>
+2. 변경 전/후 값 적고<br>
+3. 분석 시작<br>
+4. HTML 파일 보고 대충 이렇구나 보고<br>
+5. txt 파일이나 복사한 프롬프트 가지고 GPT한테 처리
 
 <p><b>단축키</b></p>
 • 분석 시작: Ctrl+R<br>
-• 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W
+• 프로그램 종료: Ctrl+Q, Alt+F4, Ctrl+W<br>
+<br>
+이게 정식프로세스는 절대 안되길 바라며 ^~^
 """
         msg = QMessageBox(self)
         msg.setWindowTitle("프로그램 정보")
@@ -711,7 +717,8 @@ DX하는 회사에서 API도 안주는 ~
             'to': self.to_input.text(),
             'path': self.path_input.text(),
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'encoding': self.current_encoding
+            'encoding': self.current_encoding,
+            'csv_enabled': self.csv_enabled  # CSV 설정 추가
         }
         
         # 동일한 항목이 있으면 제거
@@ -772,7 +779,12 @@ DX하는 회사에서 API도 안주는 ~
             if act.data() == loaded_encoding:
                 act.setChecked(True)
                 break
-        self.status_label.setText(f"최근 항목 로드됨. 인코딩: {self.current_encoding}")
+                
+        # CSV 설정 복원
+        self.csv_enabled = item.get('csv_enabled', False)
+        self.csv_action.setChecked(self.csv_enabled)
+        
+        self.status_label.setText(f"최근 항목 로드됨. 인코딩: {self.current_encoding}, CSV: {'켜짐' if self.csv_enabled else '꺼짐'}")
 
     def clear_recent_items(self):
         """최근 항목 모두 지우기"""
@@ -804,8 +816,32 @@ DX하는 회사에서 API도 안주는 ~
                     html_path = os.path.abspath(os.path.join(output_dir, sorted(html_files)[-1]))
                     all_prompt_paths = [os.path.abspath(p) for p in prompt_files]
                     
+                    # 통계 정보 표시
+                    with open(html_path, 'r', encoding='utf-8') as f:
+                        html_content = f.read()
+                        # HTML에서 통계 정보 추출
+                        import re
+                        stats = {}
+                        stats['total_files'] = int(re.search(r'<div class="stat-value">(\d+)</div>\s*</div>\s*<div class="stat-item">\s*<div class="stat-label">함수 수', html_content).group(1))
+                        stats['total_funcs'] = int(re.search(r'<div class="stat-value">(\d+)</div>\s*</div>\s*<div class="stat-item">\s*<div class="stat-label">ENUM', html_content).group(1))
+                        stats['total_enums'] = int(re.search(r'<div class="stat-value">(\d+)</div>\s*</div>\s*</div>', html_content).group(1))
+                        
+                        result_text.append(f"=== {enum_name} 분석 결과 ===")
+                        result_text.append(f"분석 파일 수: {stats['total_files']}")
+                        result_text.append(f"함수 수: {stats['total_funcs']}")
+                        result_text.append(f"ENUM 사용 총 횟수: {stats['total_enums']}")
+                        result_text.append("")
+                    
                     result_text.append("=== 생성된 파일 ===")
                     result_text.append(f"HTML: {html_path}")
+                    
+                    # CSV 파일 찾기 (CSV 옵션이 켜져있을 때만)
+                    if self.csv_enabled:
+                        csv_files = [f for f in os.listdir(output_dir)
+                                   if f.startswith(f"{enum_name}_Output_") and f.endswith('.csv')]
+                        if csv_files:
+                            csv_path = os.path.abspath(os.path.join(output_dir, sorted(csv_files)[-1]))
+                            result_text.append(f"CSV: {csv_path}")
                     
                     if len(all_prompt_paths) > 1:
                         result_text.append("프롬프트 파일:")
@@ -836,7 +872,11 @@ DX하는 회사에서 API도 안주는 ~
             self.progress_bar.hide()
             # 분석 완료 후 상태 메시지 (성공/실패에 따라 다르게)
             if not error_logs and prompt_files:
-                self.status_label.setText(f"분석 완료 (인코딩: {self.current_encoding})")
+                status_msg = f"분석 완료 (인코딩: {self.current_encoding}"
+                if self.csv_enabled:
+                    status_msg += ", CSV 출력 포함"
+                status_msg += ")"
+                self.status_label.setText(status_msg)
             elif not error_logs and not prompt_files:
                 self.status_label.setText(f"분석 완료: 일치 항목 없음 (인코딩: {self.current_encoding})")
             # 에러가 있으면 analysis_error에서 이미 '오류 발생'으로 설정됨

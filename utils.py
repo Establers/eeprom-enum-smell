@@ -164,3 +164,31 @@ def save_split_prompts(content, base_path, target_lines=None):
         saved_files.append(part_path)
     
     return saved_files 
+
+def get_analysis_stats(enum_name: str, results: list) -> dict:
+    """분석 결과의 통계 정보를 반환합니다.
+    
+    Args:
+        enum_name (str): 분석한 ENUM 이름
+        results (list): 분석 결과 리스트
+    
+    Returns:
+        dict: 통계 정보를 담은 딕셔너리
+    """
+    total_files = len(set(r['file'] for r in results))
+    total_funcs = len(results)
+    total_enums = sum(r['enum_count'] for r in results)
+    
+    return {
+        'enum_name': enum_name,
+        'total_files': total_files,
+        'total_funcs': total_funcs,
+        'total_enums': total_enums
+    }
+
+def print_analysis_stats(stats: dict):
+    """분석 통계를 출력합니다."""
+    print(f"\n=== {stats['enum_name']} 분석 결과 ===")
+    print(f"분석 파일 수: {stats['total_files']}")
+    print(f"함수 수: {stats['total_funcs']}")
+    print(f"ENUM 사용 총 횟수: {stats['total_enums']}\n")
