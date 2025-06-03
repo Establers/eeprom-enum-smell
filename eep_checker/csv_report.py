@@ -22,8 +22,8 @@ def save_csv_report(enum_name: str, results: List[Dict], output_dir: str = '.'):
         writer = csv.writer(f)
         # 헤더 작성
         writer.writerow([
-            '파일명', '함수명', '사용 횟수', 
-            '시작 라인', '끝 라인', 'ENUM 사용 라인',
+            '타입', '파일경로', '함수명', 'ENUM 사용횟수 (호출대상인 경우)',
+            '시작 라인', '끝 라인', 'ENUM 사용 라인 (호출대상인 경우)', '호출 대상 함수', '호출 라인 (호출자인 경우)',
             '코드'
         ])
         
@@ -32,15 +32,35 @@ def save_csv_report(enum_name: str, results: List[Dict], output_dir: str = '.'):
             # ENUM 사용 라인들을 쉼표로 구분된 문자열로 변환
             enum_lines_str = ', '.join(map(str, r['enum_lines']))
             
+            # 1. Enum 사용 함수 정보 기록
             writer.writerow([
+                'Enum 사용 함수', # 타입
                 r['file'],
                 r['func_name'],
                 r['enum_count'],
                 r['start_line'],
                 r['end_line'],
                 enum_lines_str,
-                r['code'].replace('\n', '\\n')  # 줄바꿈을 이스케이프하여 저장
+                '', # 호출 대상 함수 (본인이므로 비워둠)
+                '', # 호출 라인 (본인이므로 비워둠)
+                r['code'].replace('\n', '\\n')
             ])
+
+            # 2. 호출자(Caller) 정보 기록
+            if r.get('callers'):
+                for caller in r['callers']:
+                    writer.writerow([
+                        '호출 함수', # 타입
+                        r['file'], # 호출자가 포함된 파일 (Enum 사용 함수와 동일 파일 가정)
+                        caller['func_name'],
+                        '', # Enum 사용 횟수 (호출자이므로 비워둠)
+                        caller['start_line'],
+                        caller['end_line'],
+                        '', # Enum 사용 라인 (호출자이므로 비워둠)
+                        r['func_name'], # 호출 대상 함수명
+                        caller['call_line'], # 호출 라인
+                        caller['code'].replace('\n', '\\n')
+                    ])
     
     print(f"CSV 보고서가 생성되었습니다: {filepath}")
     return filepath 

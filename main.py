@@ -70,6 +70,7 @@ def main(progress_callback=None):
     argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
     argp.add_argument('--csv', action='store_true', help='분석 결과를 CSV 파일로도 저장')
     argp.add_argument('--include-headers', action='store_true', help='헤더 파일(.h)도 분석에 포함')
+    argp.add_argument('--find-caller', action='store_true', default=False, help='호출자 함수 분석 기능 사용 (기본값: 비활성화)')
     args = argp.parse_args()
 
     # 경로 검증
@@ -114,7 +115,8 @@ def main(progress_callback=None):
                 code, args.enum, 
                 file_name=rel_path,
                 debug=args.debug,
-                query_mode=args.query
+                query_mode=args.query,
+                analyze_callers=args.find_caller
             )
         except Exception as e:
             log_error(f"[Warning] 파일 파싱 실패: {rel_path} → {str(e)}")
@@ -125,7 +127,8 @@ def main(progress_callback=None):
             if args.debug:
                 print(f"함수명 추출 결과: {r['func_name']}")
             prompt = make_llm_prompt(
-                r['file'], r['func_name'], args.enum, args.from_value, args.to_value, r['code']
+                r['file'], r['func_name'], args.enum, args.from_value, args.to_value, r['code'],
+                callers=r.get('callers')
             )
             llm_prompts.append(prompt)
 

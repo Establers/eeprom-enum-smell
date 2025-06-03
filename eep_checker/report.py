@@ -46,9 +46,9 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
             <td>{html.escape(str(r['enum_count']))}</td>
             <td>{r['start_line']}-{r['end_line']}</td>
             <td title="ENUM 사용 위치: {enum_lines_str}">{enum_lines_str}</td>
-            <td><button class="btn toggle-btn" onclick="toggleCode({i})" data-state="closed">보기</button></td>
+            <td><button class="btn toggle-btn" onclick="toggleCode('{i}_enum_func')" data-state="closed">보기</button></td>
         </tr>
-        <tr id="code_{i}" class="code-row" style="display:none">
+        <tr id="code_{i}_enum_func" class="code-row" style="display:none">
             <td colspan="6">
                 <div class="code-container">
                     <div class="code-preview">
@@ -59,6 +59,30 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
         </tr>
         """
         table_rows.append(row)
+
+        # 호출자 정보 추가
+        if r.get('callers'):
+            for j, caller in enumerate(r['callers']):
+                caller_row = f"""
+                <tr class=\"caller-row\">
+                    <td colspan=\"1\" style=\"padding-left: 30px;\"><em>└ 호출:</em></td>
+                    <td title=\"{html.escape(str(caller['func_name']))}\">{html.escape(str(caller['func_name']))}</td>
+                    <td></td> 
+                    <td>{caller['start_line']}-{caller['end_line']} (호출: L{caller['call_line']})</td>
+                    <td></td>
+                    <td><button class=\"btn toggle-btn\" onclick=\"toggleCode('{i}_caller_{j}')\" data-state=\"closed\">보기</button></td>
+                </tr>
+                <tr id=\"code_{i}_caller_{j}\" class=\"code-row caller-code-row\" style=\"display:none\">
+                    <td colspan=\"6\">
+                        <div class=\"code-container\">
+                            <div class=\"code-preview\">
+                                <pre class=\"line-numbers\"><code class=\"language-c\">{html.escape(caller['code'])}</code></pre>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                """
+                table_rows.append(caller_row)
 
     html_content = f"""
     <!DOCTYPE html>
@@ -207,8 +231,16 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
                 word-wrap: normal;
             }}
 
-            .code-row {{
+            .code-row {{ 
                 background: var(--bg);
+            }}
+
+            .caller-row td {{
+                background-color: #f9f9f9; /* 호출자 행 배경색 약간 다르게 */
+                font-style: italic;
+            }}
+            .caller-code-row td {{
+                 background-color: #f0f0f0; /* 호출자 코드 행 배경색 */
             }}
 
             .code-row > td {{
@@ -516,47 +548,80 @@ def save_html_report(enum_name: str, results: List[Dict], output_dir: str = '.')
         const searchType = document.getElementById('searchType');
         const resultTable = document.getElementById('resultTable');
         const tbody = resultTable.getElementsByTagName('tbody')[0];
-        const rows = tbody.getElementsByTagName('tr');
+        const allRows = tbody.getElementsByTagName('tr'); // Live collection
 
         function filterTable() {{
             const searchText = searchField.value.toLowerCase();
             const type = searchType.value;
-            let columnIndex = type === 'file' ? 0 : 1;
-            
-            for (let i = 0; i < rows.length; i += 2) {{  // 2씩 증가 (코드 행 제외)
-                const cell = rows[i].getElementsByTagName('td')[columnIndex];
-                const cellText = cell.textContent.toLowerCase();
-                const isMatch = cellText.includes(searchText);
+            const tbody = resultTable.getElementsByTagName('tbody')[0];
+            const allRows = tbody.getElementsByTagName('tr'); // Live collection
+
+            // Pass 1: Filter main rows (enum func and caller) and highlight
+            for (let i = 0; i < allRows.length; i++) {{
+                const row = allRows[i];
+                if (row.id.startsWith('code_')) continue; // Skip code rows in this pass
+
+                let cellText = '';
+                let isSearchTarget = false;
+                let columnIndex = (type === 'file') ? 0 : 1;
+
+                if (row.classList.contains('caller-row')) {{
+                    if (type === 'function') {{ // Caller rows searched by function name
+                        const cell = row.getElementsByTagName('td')[1];
+                        if (cell) cellText = cell.textContent.toLowerCase();
+                        isSearchTarget = true;
+                    }}
+                }} else {{ // Enum func row
+                    const cell = row.getElementsByTagName('td')[columnIndex];
+                    if (cell) cellText = cell.textContent.toLowerCase();
+                    isSearchTarget = true;
+                }}
+
+                let isMatch = !isSearchTarget || !searchText || cellText.includes(searchText);
                 
-                // 메인 행 표시/숨김
-                rows[i].classList.toggle('hidden', !isMatch);
-                
-                // 코드 행 처리
-                if (i + 1 < rows.length) {{
-                    const codeRow = rows[i + 1];
-                    const btn = rows[i].querySelector('.toggle-btn');
-                    
-                    if (!isMatch) {{
-                        // 검색 결과에 없으면 코드를 접고 행을 숨김
-                        codeRow.style.display = 'none';
-                        codeRow.classList.add('hidden');
-                        if (btn) {{
-                            btn.textContent = '보기';
-                            btn.dataset.state = 'closed';
-                        }}
-                    }} else {{
-                        codeRow.classList.remove('hidden');
+                // For caller rows not directly searched (e.g., by file), initially assume they are not hidden by search itself
+                if (row.classList.contains('caller-row') && type === 'file') {{
+                    isMatch = true; // Will be handled by parent enum func row visibility in Pass 2
+                }}
+
+                row.classList.toggle('hidden', !isMatch);
+
+                // Highlight
+                const highlightCellIndex = row.classList.contains('caller-row') ? 1 : columnIndex;
+                const cellToHighlight = row.getElementsByTagName('td')[highlightCellIndex];
+                if (cellToHighlight) {{
+                    cellToHighlight.innerHTML = cellToHighlight.textContent; // Clear previous
+                    if (isMatch && searchText && isSearchTarget) {{
+                        cellToHighlight.innerHTML = cellToHighlight.textContent.replace(
+                            new RegExp(searchText, 'gi'),
+                            match => `<span class="highlight">${{match}}</span>`
+                        );
                     }}
                 }}
-                
-                // 검색어 하이라이트
-                if (searchText) {{
-                    cell.innerHTML = cell.textContent.replace(
-                        new RegExp(searchText, 'gi'),
-                        match => `<span class="highlight">${{match}}</span>`
-                    );
-                }} else {{
-                    cell.innerHTML = cell.textContent;
+            }}
+
+            // Pass 2: Adjust visibility of dependent rows (code rows, caller rows based on parent enum func)
+            let currentEnumFuncRowIsHidden = false;
+            for (let i = 0; i < allRows.length; i++) {{
+                const row = allRows[i];
+
+                if (row.id.startsWith('code_')) {{ // This is a code row
+                    const id_part = row.id.substring(5); // e.g., "0_enum_func"
+                    const button = document.querySelector(`button[onclick="toggleCode('${{id_part}}')"]`);
+                    if (button) {{
+                        const displayRowForButton = button.closest('tr');
+                        if (displayRowForButton && displayRowForButton.classList.contains('hidden')) {{
+                            row.style.display = 'none';
+                            button.textContent = '보기';
+                            button.dataset.state = 'closed';
+                        }}
+                    }}
+                }} else if (!row.classList.contains('caller-row')) {{ // This is an Enum Func Row
+                    currentEnumFuncRowIsHidden = row.classList.contains('hidden');
+                }} else {{ // This is a Caller Row
+                    if (currentEnumFuncRowIsHidden) {{
+                        row.classList.add('hidden');
+                    }}
                 }}
             }}
         }}

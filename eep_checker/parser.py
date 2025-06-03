@@ -38,7 +38,12 @@ def get_enclosing_function_name(node, code):
         if parent.type == 'function_definition':
             decl = parent.child_by_field_name('declarator')
             if decl: # declarator가 없을 수도 있음 (예: 익명 함수)
-                 return find_identifier_in_declarator(decl, code)
+                 # 함수 선언부에서 실제 함수 이름을 정확히 추출하도록 수정
+                func_name_node = decl.child_by_field_name('declarator') # function_declarator의 declarator
+                if func_name_node and func_name_node.type == 'identifier':
+                    return code[func_name_node.start_byte:func_name_node.end_byte].decode(errors='ignore')
+                # 포인터 함수 등의 경우 identifier가 더 깊이 있을 수 있음
+                return find_identifier_in_declarator(decl, code)
         parent = parent.parent
     return None
 
@@ -164,7 +169,7 @@ def debug_print_function_node(node, code, depth=0, debug=False):
         if not is_field_child:
             debug_print_function_node(child_node, code, depth + 1, debug=debug)
 
-def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False):
+def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False, analyze_callers=False):
     """
     AST의 node를 재귀 탐색하면서,
     1) 전역에서 enum을 쓰는 변수들(enum_vars) 수집 (최상위 호출 시)
@@ -250,14 +255,84 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                 'enum_count': enum_count_direct,
                 'start_line': start_line,
                 'end_line': end_line,
-                'enum_lines': enum_lines  # ENUM이 사용된 라인 번호들 추가
+                'enum_lines': enum_lines,  # ENUM이 사용된 라인 번호들 추가
+                'callers': [] # 호출자 정보를 저장할 리스트 초기화
             })
             if debug:
                 print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}")
 
     # 5) 하위 노드 재귀 호출 (enum_vars를 그대로 넘겨줌)
     for child_node in node.children:
-        results.extend(extract_functions_with_enum(child_node, code, target_enum, enum_vars, debug=debug))
+        results.extend(extract_functions_with_enum(child_node, code, target_enum, enum_vars, debug=debug, analyze_callers=analyze_callers))
+
+    # 함수 호출 관계 분석 (extract_functions_with_enum이 translation_unit에서 처음 호출될 때 한 번만 실행)
+    if node.type == 'translation_unit' and results and analyze_callers:
+        # 먼저 모든 함수 정의를 찾아서 위치 정보와 함께 저장
+        all_function_definitions = {}
+        def find_all_defs(n):
+            if n.type == 'function_definition':
+                decl = n.child_by_field_name('declarator')
+                if decl:
+                    func_name = find_identifier_in_declarator(decl, code)
+                    if func_name:
+                        func_code = code[n.start_byte:n.end_byte].decode(errors='ignore')
+                        start_line = code.count(b'\n', 0, n.start_byte) + 1
+                        end_line = start_line + func_code.count('\n')
+                        all_function_definitions[func_name] = {
+                            'node': n,
+                            'code': func_code,
+                            'start_line': start_line,
+                            'end_line': end_line
+                        }
+            for child_n in n.children:
+                find_all_defs(child_n)
+        find_all_defs(node)
+
+        # 각 함수를 순회하며 호출하는 함수(caller)를 찾음
+        for res_item in results:
+            target_func_name = res_item['func_name']
+            
+            # 전체 AST를 순회하며 target_func_name을 호출하는 함수들을 찾음
+            callers_found = [] # 현재 target_func_name에 대한 호출자들
+            
+            def find_call_sites(n, current_enclosing_func_name=None, current_enclosing_func_node=None):
+                if n.type == 'function_definition':
+                    decl_node = n.child_by_field_name('declarator')
+                    if decl_node:
+                        # 현재 탐색 중인 함수의 이름을 가져옴
+                        current_enclosing_func_name = find_identifier_in_declarator(decl_node, code)
+                        current_enclosing_func_node = n # 현재 함수의 전체 노드 저장
+
+                if n.type == 'call_expression':
+                    func_identifier_node = n.child_by_field_name('function')
+                    if func_identifier_node and func_identifier_node.type == 'identifier':
+                        called_func_name = code[func_identifier_node.start_byte:func_identifier_node.end_byte].decode(errors='ignore')
+                        if called_func_name == target_func_name and current_enclosing_func_name and current_enclosing_func_name != target_func_name: # 자기 자신 호출은 제외
+                            # 호출자 정보가 all_function_definitions에 있는지 확인
+                            if current_enclosing_func_name in all_function_definitions:
+                                caller_info_def = all_function_definitions[current_enclosing_func_name] # 변수명 변경
+                                call_line = code.count(b'\n', 0, func_identifier_node.start_byte) + 1
+                                
+                                # 중복 호출자 방지 (호출 함수 이름 기준)
+                                existing_caller_names = [c['func_name'] for c in callers_found]
+                                if current_enclosing_func_name not in existing_caller_names:
+                                    callers_found.append({
+                                        'func_name': current_enclosing_func_name,
+                                        'code': caller_info_def['code'], # 수정된 변수명 사용
+                                        'start_line': caller_info_def['start_line'], # 수정된 변수명 사용
+                                        'end_line': caller_info_def['end_line'], # 수정된 변수명 사용
+                                        'call_line': call_line # 최초 발견된 호출 라인
+                                    })
+                                    if debug:
+                                        print(f"[DEBUG] Caller found: {current_enclosing_func_name} calls {target_func_name} at line {call_line}")
+                
+                for child_n in n.children:
+                    find_call_sites(child_n, current_enclosing_func_name, current_enclosing_func_node)
+
+            find_call_sites(node) # translation_unit부터 다시 탐색 시작
+            res_item['callers'] = callers_found
+            if debug and callers_found:
+                 print(f"[DEBUG] Function {target_func_name} is called by: {[c['func_name'] for c in callers_found]}")
 
     return results
 
@@ -303,7 +378,7 @@ def debug_print_tree(node, code, depth=0):
     for child_node in node.children: # 변수명 변경 child -> child_node
         debug_print_tree(child_node, code, depth + 1)
 
-def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=False, query_mode=False): # query_mode는 사용 안함
+def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=False, query_mode=False, analyze_callers=False):
     code_bytes = bytes(code, "utf8")
     tree = parser.parse(code_bytes)
 
@@ -312,7 +387,7 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         debug_print_tree(tree.root_node, code_bytes)
         print("\nSearching for functions...")
 
-    results = extract_functions_with_enum(tree.root_node, code_bytes, target_enum, enum_vars=None, debug=debug)
+    results = extract_functions_with_enum(tree.root_node, code_bytes, target_enum, enum_vars=None, debug=debug, analyze_callers=analyze_callers)
 
     unique_results = []
     seen_results_hashes = set() # 해시를 저장할 set

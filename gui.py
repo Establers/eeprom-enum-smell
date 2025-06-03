@@ -83,6 +83,9 @@ class AnalyzerThread(QThread):
             if self.args.get('include_headers', False):  # 헤더 파일 포함 옵션이 켜져있으면 추가
                 sys.argv.append('--include-headers')
             
+            if self.args.get('find_caller', False): # 호출자 분석 옵션
+                sys.argv.append('--find-caller')
+            
             def progress_callback(status, elapsed, progress=None):
                 """진행 상황 업데이트 콜백"""
                 self.progress.emit(status, elapsed)
@@ -119,6 +122,8 @@ class EEPCheckerGUI(QMainWindow):
         
         # CSV 출력 옵션 상태 추가
         self.csv_enabled = False
+        # 호출자 분석 옵션 상태 추가
+        self.find_caller_enabled = False
         
         # 메뉴바 생성
         menubar = self.menuBar()
@@ -147,6 +152,12 @@ class EEPCheckerGUI(QMainWindow):
         self.include_headers_action.setChecked(False)  # 기본값은 False
         self.include_headers_action.triggered.connect(self.toggle_include_headers)
         output_menu.addAction(self.include_headers_action)
+        
+        # 호출자 분석 액션 추가
+        self.find_caller_action = QAction('호출자 함수 분석', self, checkable=True)
+        self.find_caller_action.setChecked(self.find_caller_enabled)
+        self.find_caller_action.triggered.connect(self.toggle_find_caller)
+        output_menu.addAction(self.find_caller_action)
         
         # 인코딩 설정 메뉴 추가
         encoding_menu = file_menu.addMenu('소스코드 인코딩')
@@ -525,6 +536,11 @@ class EEPCheckerGUI(QMainWindow):
         is_enabled = self.include_headers_action.isChecked()
         self.status_label.setText(f"헤더 파일 검사: {'포함' if is_enabled else '제외'}")
 
+    def toggle_find_caller(self):
+        """호출자 함수 분석 옵션 토글"""
+        self.find_caller_enabled = self.find_caller_action.isChecked()
+        self.status_label.setText(f"호출자 분석: {'활성화' if self.find_caller_enabled else '비활성화'}")
+
     def analyze(self):
         if not all([self.enum_input.text(), self.from_input.text(), 
                    self.to_input.text(), self.path_input.text()]):
@@ -584,7 +600,8 @@ class EEPCheckerGUI(QMainWindow):
                 'to': self.to_input.text(),
                 'path': self.path_input.text(),
                 'csv': self.csv_enabled,
-                'include_headers': self.include_headers_action.isChecked()  # 헤더 파일 포함 설정 전달
+                'include_headers': self.include_headers_action.isChecked(),  # 헤더 파일 포함 설정 전달
+                'find_caller': self.find_caller_enabled # 호출자 분석 설정 전달
             },
             target_lines=self.target_lines,
             encoding=self.current_encoding
@@ -710,6 +727,8 @@ AX DX 하자면서 API 하나 안줘~!
                         item['encoding'] = 'utf-8'
                     if 'include_headers' not in item:
                         item['include_headers'] = False
+                    if 'find_caller' not in item: # 최근 항목 호환성
+                        item['find_caller'] = False
                 return items
         except Exception:
             pass
@@ -734,7 +753,8 @@ AX DX 하자면서 API 하나 안줘~!
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'encoding': self.current_encoding,
             'csv_enabled': self.csv_enabled,
-            'include_headers': self.include_headers_action.isChecked()  # 헤더 파일 포함 설정 저장
+            'include_headers': self.include_headers_action.isChecked(),  # 헤더 파일 포함 설정 저장
+            'find_caller': self.find_caller_enabled # 호출자 분석 설정 저장
         }
         
         # 동일한 항목이 있으면 제거
@@ -803,10 +823,15 @@ AX DX 하자면서 API 하나 안줘~!
         # 헤더 파일 포함 설정 복원
         self.include_headers_action.setChecked(item.get('include_headers', False))
         
+        # 호출자 분석 설정 복원
+        self.find_caller_enabled = item.get('find_caller', False)
+        self.find_caller_action.setChecked(self.find_caller_enabled)
+        
         self.status_label.setText(
             f"최근 항목 로드됨. 인코딩: {self.current_encoding}, "
             f"CSV: {'켜짐' if self.csv_enabled else '꺼짐'}, "
-            f"헤더: {'포함' if self.include_headers_action.isChecked() else '제외'}"
+            f"헤더: {'포함' if self.include_headers_action.isChecked() else '제외'}, "
+            f"호출자 분석: {'활성화' if self.find_caller_enabled else '비활성화'}"
         )
 
     def clear_recent_items(self):
@@ -898,6 +923,8 @@ AX DX 하자면서 API 하나 안줘~!
                 status_msg = f"분석 완료 (인코딩: {self.current_encoding}"
                 if self.csv_enabled:
                     status_msg += ", CSV 출력 포함"
+                if self.find_caller_enabled:
+                    status_msg += ", 호출자 분석 활성"
                 status_msg += ")"
                 self.status_label.setText(status_msg)
             elif not error_logs and not prompt_files:
