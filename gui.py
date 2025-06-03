@@ -7,7 +7,8 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QLabel, QMessageBox, QGridLayout,
-    QTextEdit, QInputDialog, QSpinBox, QProgressBar, QMenu
+    QTextEdit, QInputDialog, QSpinBox, QProgressBar, QMenu, QCheckBox,
+    QDialog, QDialogButtonBox
 )
 from PySide6.QtCore import Qt, QMimeData, QThread, Signal
 from PySide6.QtGui import QIcon, QClipboard, QDragEnterEvent, QDropEvent, QFontDatabase, QAction, QFont, QActionGroup
@@ -51,46 +52,42 @@ class PathLineEdit(QLineEdit):
 
 class AnalyzerThread(QThread):
     """분석 작업을 수행하는 스레드"""
-    progress = Signal(str, float)  # 진행 상황과 경과 시간을 전달하는 시그널
-    progress_value = Signal(int)  # 진행률을 전달하는 시그널 (0-100)
-    finished = Signal(list, list)  # 완료 시 프롬프트 파일 목록과 에러 로그를 전달하는 시그널
-    error = Signal(str)  # 에러 메시지를 전달하는 시그널
+    progress = Signal(str, float)
+    progress_value = Signal(int)
+    finished = Signal(list, list)
+    error = Signal(str)
 
-    def __init__(self, args, target_lines, encoding):
+    def __init__(self, args, target_lines_cli_param, encoding):
         super().__init__()
         self.args = args
-        self.target_lines = target_lines
+        self.target_lines_cli_param = target_lines_cli_param
         self.encoding = encoding
 
     def run(self):
         try:
-            # 명령줄 인자 설정
             sys.argv = [
                 'main.py',
                 '--enum', self.args['enum'],
-                '--from', self.args['from'],
-                '--to', self.args['to'],
+                '--from', self.args['from_val'],
+                '--to', self.args['to_val'],
                 '--path', self.args['path'],
                 '--encoding', self.encoding
             ]
             
-            if self.target_lines is not None:
-                sys.argv.extend(['--target-lines', str(self.target_lines)])
+            if self.target_lines_cli_param is not None:
+                sys.argv.extend(['--target-lines', str(self.target_lines_cli_param)])
             
-            if self.args.get('csv', False):  # CSV 옵션이 켜져있으면 추가
+            if self.args.get('csv', False):
                 sys.argv.append('--csv')
-                
-            if self.args.get('include_headers', False):  # 헤더 파일 포함 옵션이 켜져있으면 추가
+            if self.args.get('include_headers', False):
                 sys.argv.append('--include-headers')
-            
-            if self.args.get('find_caller', False): # 호출자 분석 옵션
+            if self.args.get('find_caller', False):
                 sys.argv.append('--find-caller')
             
-            def progress_callback(status, elapsed, progress=None):
-                """진행 상황 업데이트 콜백"""
+            def progress_callback(status, elapsed, current_progress=None):
                 self.progress.emit(status, elapsed)
-                if progress is not None:
-                    self.progress_value.emit(progress)
+                if current_progress is not None:
+                    self.progress_value.emit(current_progress)
             
             prompt_files, error_logs = eep_checker.main(progress_callback=progress_callback)
             self.finished.emit(prompt_files, error_logs)
@@ -102,13 +99,7 @@ class EEPCheckerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("eeprom enum smell")
-        self.setMinimumWidth(500)
-        self.setFixedHeight(360)
-        
-        # 폰트 로드
-        loaded_fonts = load_fonts()
-        default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
-        
+        self.setMinimumSize(550, 380)
         
         # 아이콘 설정
         icon_path = os.path.join(os.path.dirname(__file__), 'imgs', 'eeprom.ico')
@@ -123,6 +114,7 @@ class EEPCheckerGUI(QMainWindow):
         # CSV 출력 옵션 상태 추가
         self.csv_enabled = False
         # 호출자 분석 옵션 상태 추가
+        self.include_headers_enabled = False
         self.find_caller_enabled = False
         
         # 메뉴바 생성
@@ -142,20 +134,17 @@ class EEPCheckerGUI(QMainWindow):
         output_menu = file_menu.addMenu('출력 설정')
         
         # CSV 출력 액션
-        self.csv_action = QAction('CSV 파일 생성', self, checkable=True)
-        self.csv_action.setChecked(self.csv_enabled)
+        self.csv_action = QAction('CSV 파일 생성', self, checkable=True, checked=self.csv_enabled)
         self.csv_action.triggered.connect(self.toggle_csv_output)
         output_menu.addAction(self.csv_action)
         
         # 헤더 파일 포함 액션 추가
-        self.include_headers_action = QAction('헤더 파일(.h) 포함', self, checkable=True)
-        self.include_headers_action.setChecked(False)  # 기본값은 False
+        self.include_headers_action = QAction('헤더 파일(.h) 포함', self, checkable=True, checked=self.include_headers_enabled)
         self.include_headers_action.triggered.connect(self.toggle_include_headers)
         output_menu.addAction(self.include_headers_action)
         
         # 호출자 분석 액션 추가
-        self.find_caller_action = QAction('호출자 함수 분석', self, checkable=True)
-        self.find_caller_action.setChecked(self.find_caller_enabled)
+        self.find_caller_action = QAction('호출자 함수 분석', self, checkable=True, checked=self.find_caller_enabled)
         self.find_caller_action.triggered.connect(self.toggle_find_caller)
         output_menu.addAction(self.find_caller_action)
         
@@ -164,25 +153,22 @@ class EEPCheckerGUI(QMainWindow):
         self.encoding_group = QActionGroup(self)
         self.encoding_group.setExclusive(True)
 
-        utf8_action = QAction('UTF-8 (기본값)', self, checkable=True)
-        utf8_action.setData('utf-8')
-        utf8_action.setChecked(True)
-        utf8_action.triggered.connect(self.set_encoding)
-        encoding_menu.addAction(utf8_action)
-        self.encoding_group.addAction(utf8_action)
-
-        euckr_action = QAction('EUC-KR', self, checkable=True)
-        euckr_action.setData('euc-kr')
-        euckr_action.triggered.connect(self.set_encoding)
-        encoding_menu.addAction(euckr_action)
-        self.encoding_group.addAction(euckr_action)
+        encodings = [('UTF-8 (기본값)', 'utf-8'), ('EUC-KR', 'euc-kr')]
+        for name, enc_val in encodings:
+            action = QAction(name, self, checkable=True, data=enc_val)
+            if enc_val == self.current_encoding:
+                action.setChecked(True)
+            action.triggered.connect(self.set_encoding)
+            encoding_menu.addAction(action)
+            self.encoding_group.addAction(action)
         
         file_menu.addSeparator()
         
         # 프롬프트 분할 설정 액션
-        self.split_settings_action = file_menu.addAction('프롬프트 분할 설정')
-        self.split_settings_action.setCheckable(True)
-        self.split_settings_action.triggered.connect(self.show_split_settings)
+        self.split_settings_action = QAction('프롬프트 분할 설정', self, checkable=True)
+        self.split_settings_action.setChecked(self.include_headers_enabled)
+        self.split_settings_action.triggered.connect(self.show_split_settings_dialog)
+        file_menu.addAction(self.split_settings_action)
         
         # 분석 시작 액션
         analyze_action = file_menu.addAction('분석 시작')
@@ -280,6 +266,7 @@ class EEPCheckerGUI(QMainWindow):
             QSpinBox {{
                 padding: 4px;
             }}
+            QCheckBox {{ spacing: 5px; }}
         """)
 
         # 중앙 위젯 설정
@@ -379,7 +366,7 @@ class EEPCheckerGUI(QMainWindow):
                 selection-color: white;
             }}
         """)
-        self.result_text.setFixedHeight(80)
+        self.result_text.setFixedHeight(100)
         self.result_text.setPlaceholderText("분석 결과가 여기에 표시됩니다.")
         result_area.addWidget(self.result_text)
 
@@ -420,7 +407,9 @@ class EEPCheckerGUI(QMainWindow):
         status_bar.addWidget(self.status_label, 1)
 
         # 프롬프트 분할 설정 초기값
-        self.target_lines = None  # 기본적으로 분할하지 않음
+        self.target_lines_config = None
+        self.split_by_caller_mode_active = False
+        self.lines_for_regular_prompts_in_caller_mode = 2000
 
         # 최근 프롬프트 파일 경로 저장용
         self.latest_prompt_paths = []
@@ -429,11 +418,13 @@ class EEPCheckerGUI(QMainWindow):
         self._easter_egg_count = 0
         self._last_open_click_time = 0
 
+        self.update_status_bar() # 초기 상태바 업데이트
+
     def set_encoding(self):
         action = self.sender()
         if action and action.isChecked():
             self.current_encoding = action.data()
-            self.status_label.setText(f"인코딩 설정: {self.current_encoding}")
+        self.update_status_bar()
 
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "프로젝트 폴더 선택")
@@ -489,57 +480,141 @@ class EEPCheckerGUI(QMainWindow):
         if path and os.path.exists(path):
             os.startfile(os.path.normpath(path))
 
-    def show_split_settings(self):
+    def show_split_settings_dialog(self):
         """프롬프트 분할 설정 대화상자 표시"""
         if not self.split_settings_action.isChecked():
-            self.target_lines = None  # 분할 비활성화
+            self.target_lines_config = None
+            self.split_by_caller_mode_active = False
+            self.lines_for_regular_prompts_in_caller_mode = 2000
+            self.update_status_bar()
             return
 
-        msg = QMessageBox(self)
-        if self.app_icon:
-            msg.setWindowIcon(self.app_icon)
-        msg.setWindowTitle("프롬프트 분할 설정")
-        msg.setText("프롬프트를 여러 파일로 분할")
+        dialog = QDialog(self)
+        if self.app_icon: dialog.setWindowIcon(self.app_icon)
+        dialog.setWindowTitle("프롬프트 분할 설정")
         
-        # 스핀박스로 줄 수 입력받기
-        layout = msg.layout()
+        main_layout = QVBoxLayout(dialog)
+
+        # 1. 호출자별 분리 체크박스
+        caller_split_checkbox = QCheckBox("호출자 포함 프롬프트 개별 파일로 분리")
+        caller_split_checkbox.setChecked(self.split_by_caller_mode_active and self.find_caller_enabled)
+        caller_split_checkbox.setEnabled(self.find_caller_enabled)
+        if not self.find_caller_enabled:
+            caller_split_checkbox.setToolTip("먼저 '파일 > 출력 설정 > 호출자 함수 분석' 옵션을 켜주세요.")
+        main_layout.addWidget(caller_split_checkbox)
+
+        # 2. 나머지 프롬프트 분할 설정
+        split_rest_checkbox = QCheckBox("호출자가 없는 프롬프트 분할")
+        split_rest_checkbox.setChecked(isinstance(self.target_lines_config, (int, str)))
+        main_layout.addWidget(split_rest_checkbox)
+
+        # 3. Max Lines 스핀박스
         lines_widget = QWidget()
         lines_layout = QHBoxLayout(lines_widget)
-        
-        lines_label = QLabel("Max Lines:")
+        lines_label = QLabel()
         lines_spin = QSpinBox()
-        lines_spin.setRange(100, 10000)
-        lines_spin.setValue(self.target_lines if self.target_lines else 2000)
+        lines_spin.setRange(100, 20000)
         lines_spin.setSingleStep(100)
-        
+        lines_spin.setValue(self.lines_for_regular_prompts_in_caller_mode if self.split_by_caller_mode_active else (self.target_lines_config if isinstance(self.target_lines_config, int) else 2000))
         lines_layout.addWidget(lines_label)
         lines_layout.addWidget(lines_spin)
+        main_layout.addWidget(lines_widget)
+
+        def update_lines_ui_state():
+            is_caller_mode_active = caller_split_checkbox.isChecked() and self.find_caller_enabled
+            is_split_rest = split_rest_checkbox.isChecked()
+            
+            split_rest_checkbox.setEnabled(is_caller_mode_active)
+            lines_spin.setEnabled(is_split_rest)
+            
+            if is_caller_mode_active:
+                if is_split_rest:
+                    lines_label.setText("└─ 나머지 프롬프트 Max Lines:")
+                    lines_spin.setEnabled(True)
+                else:
+                    lines_label.setText("└─ 나머지 프롬프트 분할 안함")
+                    lines_spin.setEnabled(False)
+            else:
+                lines_label.setText("Max Lines (분할 안함 시 무시):")
+                lines_spin.setEnabled(True)
+                split_rest_checkbox.setChecked(True)
         
-        # 메시지 박스에 위젯 추가
-        layout.addWidget(lines_widget, 1, 1)
-        
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        
-        if msg.exec() == QMessageBox.Ok:
-            self.target_lines = lines_spin.value()
+        caller_split_checkbox.stateChanged.connect(update_lines_ui_state)
+        split_rest_checkbox.stateChanged.connect(update_lines_ui_state)
+        update_lines_ui_state()
+
+        # OK, Cancel 버튼
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        main_layout.addWidget(button_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self.split_settings_action.setChecked(True)
+            # 호출자 모드 설정
+            self.split_by_caller_mode_active = caller_split_checkbox.isChecked() and self.find_caller_enabled
+            if self.split_by_caller_mode_active:
+                if split_rest_checkbox.isChecked():
+                    self.target_lines_config = f"caller:{lines_spin.value()}"
+                    self.lines_for_regular_prompts_in_caller_mode = lines_spin.value()
+                else:
+                    self.target_lines_config = "caller"  # 나머지 프롬프트 분할 안함
+            else:
+                self.target_lines_config = lines_spin.value() if split_rest_checkbox.isChecked() else None
         else:
             self.split_settings_action.setChecked(False)
-            self.target_lines = None
+            self.target_lines_config = None
+            self.split_by_caller_mode_active = False
+            self.lines_for_regular_prompts_in_caller_mode = 2000
+
+        self.update_status_bar()
 
     def toggle_csv_output(self):
         """CSV 출력 옵션 토글"""
         self.csv_enabled = self.csv_action.isChecked()
-        self.status_label.setText(f"CSV 출력: {'켜짐' if self.csv_enabled else '꺼짐'}")
+        self.update_status_bar()
 
     def toggle_include_headers(self):
         """헤더 파일 포함 옵션 토글"""
-        is_enabled = self.include_headers_action.isChecked()
-        self.status_label.setText(f"헤더 파일 검사: {'포함' if is_enabled else '제외'}")
+        self.include_headers_enabled = self.include_headers_action.isChecked()
+        self.update_status_bar()
 
     def toggle_find_caller(self):
         """호출자 함수 분석 옵션 토글"""
         self.find_caller_enabled = self.find_caller_action.isChecked()
-        self.status_label.setText(f"호출자 분석: {'활성화' if self.find_caller_enabled else '비활성화'}")
+        if not self.find_caller_enabled:
+            self.split_by_caller_mode_active = False
+            if isinstance(self.target_lines_config, str) and self.target_lines_config.startswith("caller"):
+                try:
+                    self.target_lines_config = int(self.target_lines_config.split(":")[1])
+                except:
+                    self.target_lines_config = self.lines_for_regular_prompts_in_caller_mode
+        self.update_status_bar()
+        
+    def update_status_bar(self):
+        status_parts = []
+        # 인코딩
+        status_parts.append(f"인코딩: {self.current_encoding}")
+        # CSV
+        status_parts.append(f"CSV: {'ON' if self.csv_enabled else 'OFF'}")
+        # 헤더
+        status_parts.append(f"헤더: {'포함' if self.include_headers_enabled else '제외'}")
+        # 호출자 분석
+        status_parts.append(f"호출자 분석: {'ON' if self.find_caller_enabled else 'OFF'}")
+        # 프롬프트 분할
+        split_status = "OFF"
+        if self.split_settings_action.isChecked():
+            if self.split_by_caller_mode_active and self.find_caller_enabled:
+                if isinstance(self.target_lines_config, str):
+                    if self.target_lines_config == "caller":
+                        split_status = "호출자별 (나머지 분할 안함)"
+                    elif self.target_lines_config.startswith("caller:"):
+                        split_status = f"호출자별 (나머지: {self.lines_for_regular_prompts_in_caller_mode}줄)"
+            elif isinstance(self.target_lines_config, int):
+                split_status = f"{self.target_lines_config}줄"
+        status_parts.append(f"프롬프트 분할: {split_status}")
+        
+        self.status_label.setText(" | ".join(status_parts))
 
     def analyze(self):
         if not all([self.enum_input.text(), self.from_input.text(), 
@@ -564,7 +639,7 @@ class EEPCheckerGUI(QMainWindow):
 
         # 경로 검증 (main.py의 find_c_files 함수를 통해)
         try:
-            find_c_files(self.path_input.text(), include_headers=self.include_headers_action.isChecked())
+            find_c_files(self.path_input.text(), include_headers=self.include_headers_enabled)
         except ValueError as e:
             msg = QMessageBox(self)
             if self.app_icon:
@@ -587,27 +662,25 @@ class EEPCheckerGUI(QMainWindow):
         # 분석 시작 전에 최근 항목에 추가
         self.add_recent_item()
 
-        self.status_label.setText(f'분석 시작... (인코딩: {self.current_encoding})')
+        self.update_status_bar() # 분석 시작 전 상태 업데이트
         self.setEnabled(False)
         self.progress_bar.show()  # 진행바 표시
         self.progress_bar.setValue(0)
         
-        # 분석 스레드 생성 및 시작
         self.analyzer = AnalyzerThread(
             args={
                 'enum': self.enum_input.text(),
-                'from': self.from_input.text(),
-                'to': self.to_input.text(),
+                'from_val': self.from_input.text(),
+                'to_val': self.to_input.text(),
                 'path': self.path_input.text(),
                 'csv': self.csv_enabled,
-                'include_headers': self.include_headers_action.isChecked(),  # 헤더 파일 포함 설정 전달
-                'find_caller': self.find_caller_enabled # 호출자 분석 설정 전달
+                'include_headers': self.include_headers_enabled,
+                'find_caller': self.find_caller_enabled
             },
-            target_lines=self.target_lines,
+            target_lines_cli_param=self.target_lines_config,
             encoding=self.current_encoding
         )
         
-        # 시그널 연결
         self.analyzer.progress.connect(self.update_progress)
         self.analyzer.progress_value.connect(self.progress_bar.setValue)
         self.analyzer.finished.connect(self.analysis_finished)
@@ -729,6 +802,10 @@ AX DX 하자면서 API 하나 안줘~!
                         item['include_headers'] = False
                     if 'find_caller' not in item: # 최근 항목 호환성
                         item['find_caller'] = False
+                    if 'split_by_caller_mode_active' not in item: item['split_by_caller_mode_active'] = False
+                    if 'target_lines_config' not in item: item['target_lines_config'] = None
+                    if 'lines_for_regular_prompts_in_caller_mode' not in item: item['lines_for_regular_prompts_in_caller_mode'] = 2000
+                    if 'split_settings_action_checked' not in item: item['split_settings_action_checked'] = item.get('target_lines_config') is not None
                 return items
         except Exception:
             pass
@@ -754,7 +831,11 @@ AX DX 하자면서 API 하나 안줘~!
             'encoding': self.current_encoding,
             'csv_enabled': self.csv_enabled,
             'include_headers': self.include_headers_action.isChecked(),  # 헤더 파일 포함 설정 저장
-            'find_caller': self.find_caller_enabled # 호출자 분석 설정 저장
+            'find_caller': self.find_caller_enabled,
+            'target_lines_config': self.target_lines_config,
+            'split_by_caller_mode_active': self.split_by_caller_mode_active,
+            'lines_for_regular_prompts_in_caller_mode': self.lines_for_regular_prompts_in_caller_mode,
+            'split_settings_action_checked': self.split_settings_action.isChecked()
         }
         
         # 동일한 항목이 있으면 제거
@@ -791,14 +872,14 @@ AX DX 하자면서 API 하나 안줘~!
             
             action = QAction(text, self)
             action.setData(item)  # 항목 데이터 저장
-            action.triggered.connect(self.load_recent_item)
+            action.triggered.connect(self.load_recent_item_triggered)
             self.recent_menu.addAction(action)
         
         self.recent_menu.addSeparator()
         clear_action = self.recent_menu.addAction("최근 항목 지우기")
         clear_action.triggered.connect(self.clear_recent_items)
 
-    def load_recent_item(self):
+    def load_recent_item_triggered(self):
         """선택한 최근 항목 불러오기"""
         action = self.sender()
         item = action.data()
@@ -821,24 +902,29 @@ AX DX 하자면서 API 하나 안줘~!
         self.csv_action.setChecked(self.csv_enabled)
         
         # 헤더 파일 포함 설정 복원
-        self.include_headers_action.setChecked(item.get('include_headers', False))
+        self.include_headers_enabled = item.get('include_headers', False)
+        self.include_headers_action.setChecked(self.include_headers_enabled)
         
         # 호출자 분석 설정 복원
         self.find_caller_enabled = item.get('find_caller', False)
         self.find_caller_action.setChecked(self.find_caller_enabled)
         
-        self.status_label.setText(
-            f"최근 항목 로드됨. 인코딩: {self.current_encoding}, "
-            f"CSV: {'켜짐' if self.csv_enabled else '꺼짐'}, "
-            f"헤더: {'포함' if self.include_headers_action.isChecked() else '제외'}, "
-            f"호출자 분석: {'활성화' if self.find_caller_enabled else '비활성화'}"
-        )
+        # 프롬프트 분할 설정 복원
+        self.split_by_caller_mode_active = item.get('split_by_caller_mode_active', False)
+        self.target_lines_config = item.get('target_lines_config', None)
+        self.lines_for_regular_prompts_in_caller_mode = item.get('lines_for_regular_prompts_in_caller_mode', 2000)
+
+        # split_settings_action 체크 상태 결정
+        self.split_settings_action.setChecked(item.get('split_settings_action_checked', self.target_lines_config is not None))
+            
+        self.update_status_bar()
 
     def clear_recent_items(self):
         """최근 항목 모두 지우기"""
         self.recent_items = []
         self.save_recent_items()
         self.update_recent_menu()
+        self.update_status_bar()
 
     def analysis_finished(self, prompt_files, error_logs):
         """분석 완료 시 처리"""
@@ -930,16 +1016,17 @@ AX DX 하자면서 API 하나 안줘~!
             elif not error_logs and not prompt_files:
                 self.status_label.setText(f"분석 완료: 일치 항목 없음 (인코딩: {self.current_encoding})")
             # 에러가 있으면 analysis_error에서 이미 '오류 발생'으로 설정됨
+            self.update_status_bar() # 최종 상태 반영
 
 def main():
     app = QApplication(sys.argv)
     
     # 전역 폰트 설정
     loaded_fonts = load_fonts()
-    default_font = loaded_fonts[0] if loaded_fonts else 'Segoe UI'
-    print(f"설정된 폰트: {default_font}")
-    f = QFont(default_font, 9)
-    f.setHintingPreference(QFont.HintingPreference.PreferNoHinting )
+    default_font_name = loaded_fonts[0] if loaded_fonts else 'Malgun Gothic'
+    print(f"설정된 폰트: {default_font_name}")
+    f = QFont(default_font_name, 9)
+    f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     app.setFont(f)
     
     window = EEPCheckerGUI()

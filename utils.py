@@ -33,139 +33,207 @@ def find_c_files(root_dir, include_headers=False):
                 c_files.append(os.path.join(dirpath, f))
     return c_files
 
-def split_prompt_content(content, target_lines=None):
+def split_prompt_content(prompts_data_list, split_mode, target_lines_for_regular_files, find_caller_active):
     """
-    프롬프트 내용을 구분자로 분할하고 목표 줄 수에 맞게 재조합합니다.
+    프롬프트 내용을 다양한 모드(줄 수, 호출자 유무)에 따라 분할하고 재조합합니다.
     
     Args:
-        content (str): 분할할 프롬프트 내용
-        target_lines (int, optional): 파일당 목표 줄 수
+        prompts_data_list (list): {'text': str, 'has_callers': bool} 형태의 딕셔너리 리스트
+        split_mode (str): "lines" 또는 "caller"
+        target_lines_for_regular_files (int, optional): "lines" 모드 또는 "caller" 모드에서 호출자 없는 프롬프트 그룹의 목표 줄 수
+        find_caller_active (bool): 호출자 분석 기능 활성화 여부
         
     Returns:
-        list: (content, prompt_count) 튜플의 리스트
+        list: (content_str, prompt_count, is_caller_specific_file) 튜플의 리스트
     """
-    # target_lines가 None이면 분할하지 않음
-    if target_lines is None:
-        return [(content, 1)]
-
-    # 구분자로 프롬프트 분할
     separator = '\n' + '-' * 12 + '\n'
-    sections = content.strip().split(separator)
-    sections = [s.strip() for s in sections if s.strip()]  # 빈 섹션 제거
-    
-    # 각 섹션의 줄 수 계산
-    sections_with_lines = []
-    for section in sections:
-        lines = section.split('\n')
-        first_lines = lines[:6] if len(lines) >= 6 else lines  # 처음 6줄 확인
-        
-        # 프롬프트 특징 확인
-        has_file = any('File:' in line for line in first_lines)
-        has_func = any('Function:' in line for line in first_lines)
-        has_enum = any('Enum:' in line for line in first_lines)
-        has_change = any('→' in line for line in first_lines)
-        has_code = '```c' in section
-        
-        # 프롬프트 판별 (헤더 라인에 File, Function, Enum이 모두 있고 코드 블록이 있으면 프롬프트로 인정)
-        header_complete = has_file and has_func and has_enum and has_change
-        is_prompt = header_complete and has_code
-        
-        sections_with_lines.append({
-            'content': section,
-            'lines': len(lines),
-            'is_prompt': is_prompt,
-            'first_lines': '\n'.join(first_lines),  # 디버그용
-            'features': {  # 디버그용
-                'File 태그': has_file,
-                'Function 태그': has_func,
-                'Enum 태그': has_enum,
-                '변경 태그': has_change,
-                '코드 블록': has_code,
-                '헤더 완전성': header_complete
-            }
-        })
-    
-    # 목표 줄 수에 맞게 섹션 그룹화
-    parts = []
-    current_part = []
-    current_lines = 0
-    
-    for section in sections_with_lines:
-        # 현재 파트가 비어있으면 무조건 추가
-        if not current_part:
-            current_part.append(section)
-            current_lines = section['lines']
-            continue
-        
-        # 현재 섹션을 추가했을 때 목표 줄 수를 크게 초과하면 새 파트 시작
-        if current_lines + section['lines'] > target_lines * 1.2:  # 20% 여유 허용
-            parts.append(current_part)
-            current_part = [section]
-            current_lines = section['lines']
-        else:
-            current_part.append(section)
-            current_lines += section['lines']
-    
-    # 마지막 파트 처리
-    if current_part:
-        parts.append(current_part)
-    
-    # 각 파트를 문자열로 변환하고 구분자 추가
     formatted_parts = []
-    for part in parts:
-        # 실제 프롬프트 섹션 수 계산
-        prompt_count = sum(1 for s in part if s['is_prompt'])
-        content = separator.join(s['content'] for s in part)
-        formatted_parts.append((content, prompt_count))
-        
-        # 디버그 출력
-        print(f"\n=== 파트 정보 (프롬프트 수: {prompt_count}) ===")
-        for s in part:
-            print(f"처음 몇 줄:\n{s['first_lines']}")
-            print("특징:")
-            for feature, present in s['features'].items():
-                print(f"- {feature}: {'있음' if present else '없음'}")
-            print(f"프롬프트 여부: {s['is_prompt']}")
-            print(f"줄 수: {s['lines']}")
-            print("---")
-    
-    return formatted_parts if formatted_parts else [(content, 1)]
 
-def save_split_prompts(content, base_path, target_lines=None):
+    if split_mode == "caller" and find_caller_active:
+        prompts_with_callers = []
+        prompts_without_callers_text_list = []
+
+        for item in prompts_data_list:
+            if item['has_callers']:
+                prompts_with_callers.append(item['text'])
+            else:
+                prompts_without_callers_text_list.append(item['text'])
+        
+        # 1. 호출자가 있는 프롬프트는 각각 별도 파일로
+        for i, prompt_text in enumerate(prompts_with_callers):
+            # 각 프롬프트는 단일 섹션으로 간주, is_prompt는 여기서 중요하지 않음 (LLM 프롬프트 자체가 하나의 유닛)
+            # 실제 프롬프트 개수는 1개로 고정 (하나의 함수 + 호출자들 정보가 한 세트)
+            formatted_parts.append((separator + prompt_text + separator, 1, True)) 
+
+        # 2. 호출자가 없는 프롬프트들은 모아서 기존처럼 라인 수 기반 분할 (또는 분할 안함)
+        if prompts_without_callers_text_list:
+            combined_no_callers_text = separator.join(prompts_without_callers_text_list)
+            if combined_no_callers_text:
+                 combined_no_callers_text = separator + combined_no_callers_text + separator
+
+            if target_lines_for_regular_files is None: # 분할 안함
+                if combined_no_callers_text.strip(): # 내용이 있을 때만 추가
+                    # 이 그룹의 실제 프롬프트(함수) 개수는 len(prompts_without_callers_text_list)
+                    formatted_parts.append((combined_no_callers_text, len(prompts_without_callers_text_list), False))
+            else: # 라인 수 기반 분할
+                # 기존 로직을 재활용하기 위해, prompts_without_callers_text_list를 다시 sections_with_lines 형태로 변환
+                sections_no_callers = []
+                for section_text in prompts_without_callers_text_list:
+                    lines = section_text.split('\n')
+                    sections_no_callers.append({
+                        'content': section_text,
+                        'lines': len(lines),
+                        'is_prompt': True # 각 항목을 하나의 프롬프트로 간주
+                    })
+                
+                # 목표 줄 수에 맞게 섹션 그룹화 (기존 로직 일부 사용)
+                current_part_content_list = []
+                current_lines = 0
+                current_prompt_count = 0
+
+                for section_info in sections_no_callers:
+                    if not current_part_content_list: # 현재 파트가 비어있으면 무조건 추가
+                        current_part_content_list.append(section_info['content'])
+                        current_lines = section_info['lines']
+                        current_prompt_count = 1
+                    elif current_lines + section_info['lines'] > target_lines_for_regular_files * 1.2: # 20% 여유
+                        formatted_parts.append((separator + separator.join(current_part_content_list) + separator, current_prompt_count, False))
+                        current_part_content_list = [section_info['content']]
+                        current_lines = section_info['lines']
+                        current_prompt_count = 1
+                    else:
+                        current_part_content_list.append(section_info['content'])
+                        current_lines += section_info['lines']
+                        current_prompt_count += 1
+                
+                if current_part_content_list: # 마지막 파트
+                    formatted_parts.append((separator + separator.join(current_part_content_list) + separator, current_prompt_count, False))
+        
+        if not formatted_parts and prompts_data_list: # 모든 프롬프트가 비어있었지만 원본 데이터는 있었던 경우 등
+             # 이 경우, 모든 프롬프트가 호출자가 없었고, 분할 기준도 없었을 수 있음.
+             # prompts_data_list의 모든 text를 합쳐서 하나의 파트로.
+            all_texts = [item['text'] for item in prompts_data_list if item['text'].strip()]
+            if all_texts:
+                content = separator + separator.join(all_texts) + separator
+                formatted_parts.append((content, len(all_texts), False))
+
+    else: # "lines" 모드 또는 caller 분석 비활성화 시: 기존 로직 (모든 프롬프트를 합쳐서 라인 수로 분할)
+        all_prompt_texts = [item['text'] for item in prompts_data_list if item['text'].strip()]
+        if not all_prompt_texts:
+            return [] # 분할할 내용 없음
+
+        combined_content = separator + separator.join(all_prompt_texts) + separator
+        if target_lines_for_regular_files is None:
+            return [(combined_content, len(all_prompt_texts), False)]
+
+        # 기존의 sections_with_lines와 유사하게 만듦 (단, is_prompt는 LLM 프롬프트 단위로 항상 True)
+        sections = []
+        for prompt_text_item in all_prompt_texts:
+            lines = prompt_text_item.split('\n')
+            sections.append({
+                'content': prompt_text_item,
+                'lines': len(lines),
+                'is_prompt': True 
+            })
+
+        parts_collector = []
+        current_part_texts = []
+        current_lines = 0
+        current_prompt_count = 0
+        for section in sections:
+            if not current_part_texts:
+                current_part_texts.append(section['content'])
+                current_lines = section['lines']
+                current_prompt_count = 1
+            elif current_lines + section['lines'] > target_lines_for_regular_files * 1.2:
+                parts_collector.append((separator + separator.join(current_part_texts) + separator, current_prompt_count, False))
+                current_part_texts = [section['content']]
+                current_lines = section['lines']
+                current_prompt_count = 1
+            else:
+                current_part_texts.append(section['content'])
+                current_lines += section['lines']
+                current_prompt_count += 1
+        
+        if current_part_texts:
+            parts_collector.append((separator + separator.join(current_part_texts) + separator, current_prompt_count, False))
+        
+        formatted_parts = parts_collector
+
+    # 디버그 출력 부분은 생략 (필요시 추가)
+    # print(f"\n=== 분할 결과 ({len(formatted_parts)} 파트) ===")
+    # for i, (content, p_count, is_caller_f) in enumerate(formatted_parts):
+    #     print(f"Part {i+1}: Prompts={p_count}, IsCallerFile={is_caller_f}, Lines approx ~{content.count('\n')}") 
+
+    return formatted_parts if formatted_parts else []
+
+
+def save_split_prompts(prompts_data_list, base_path, split_mode, target_lines_for_regular_files, find_caller_active):
     """
     프롬프트를 분할하여 저장합니다.
     
     Args:
-        content (str): 저장할 프롬프트 내용
+        prompts_data_list (list): {'text': str, 'has_callers': bool} 형태의 딕셔너리 리스트
         base_path (str): 기본 저장 경로
-        target_lines (int, optional): 파일당 목표 줄 수
+        split_mode (str): "lines" 또는 "caller"
+        target_lines_for_regular_files (int, optional): "lines" 모드 또는 호출자 없는 파일의 목표 줄 수
+        find_caller_active (bool): 호출자 분석 기능 활성화 여부
         
     Returns:
         list: 저장된 파일 경로 목록
     """
-    separator = '\n' + '-' * 12 + '\n'
     instruction_text = """답변은 함수별로 구분된 섹션으로 작성해주세요! 5번 심각도는 1점(낮음) ~ 5점(높음)과 별모양으로 표시해 주십시오.
     
 """
+    if not prompts_data_list:
+        # 내용이 없으면 빈 파일 하나만 만들거나, 아무것도 안 만들도록 선택 가능.
+        # 여기서는 아무것도 안 만들고 빈 리스트 반환
+        print("저장할 프롬프트 내용이 없습니다.")
+        return []
 
-    if target_lines is None:
+    # split_mode가 "lines"이고 target_lines_for_regular_files가 None이면 분할하지 않고 단일 파일로 저장
+    if split_mode == "lines" and target_lines_for_regular_files is None:
+        all_texts_combined = '\n' + '-' * 12 + '\n'.join([item['text'] for item in prompts_data_list if item['text'].strip()]) + '\n' + '-' * 12 + '\n'
+        if not all_texts_combined.strip('\n' + '-' * 12 + '\n '): # 실제 내용이 있는지 확인
+             print("저장할 프롬프트 내용이 없습니다 (공백 제외).")
+             return []
         with open(base_path, 'w', encoding='utf-8') as f:
-            f.write(instruction_text + content)
+            f.write(instruction_text + all_texts_combined)
         return [base_path]
 
-    parts = split_prompt_content(content, target_lines)
-    saved_files = []
+    # content는 이미 prompts_data_list로 받음
+    parts = split_prompt_content(prompts_data_list, split_mode, target_lines_for_regular_files, find_caller_active)
     
-    if len(parts) == 1:
+    if not parts:
+        print("분할된 프롬프트 파트가 없습니다.")
+        return []
+
+    saved_files = []
+    base_name, ext = os.path.splitext(base_path)
+    
+    # 단일 파트이고 caller 특정 파일이 아닌 경우, 원본 base_path 사용
+    if len(parts) == 1 and not parts[0][2]: # (content, prompt_count, is_caller_specific_file)
         with open(base_path, 'w', encoding='utf-8') as f:
             f.write(instruction_text + parts[0][0])
         return [base_path]
     
-    base_name, ext = os.path.splitext(base_path)
-    for i, (part_content, prompt_count) in enumerate(parts, 1):
-        part_path = f"{base_name}_part{i}_{prompt_count}prompts{ext}"
+    # 여러 파트이거나 caller 특정 파일인 경우, 파일명에 인덱스/타입 추가
+    caller_file_idx = 1
+    regular_file_idx = 1
+    for i, (part_content, prompt_count, is_caller_file) in enumerate(parts):
+        if not part_content.strip('\n' + '-' * 12 + '\n '): # 실제 내용이 있는지 확인
+            continue
+
+        if is_caller_file: # 호출자 관련 파일
+            part_path = f"{base_name}_caller_part{caller_file_idx}_{prompt_count}prompts{ext}"
+            caller_file_idx += 1
+        else: # 일반 분할 파일 (호출자 없거나, lines 모드)
+            part_path = f"{base_name}_part{regular_file_idx}_{prompt_count}prompts{ext}"
+            regular_file_idx += 1
+            
         with open(part_path, 'w', encoding='utf-8') as f:
-            f.write(instruction_text + separator + part_content + separator)
+            # 각 파트의 시작과 끝에 구분자를 이미 split_prompt_content에서 추가했으므로 여기서는 instruction_text만 추가
+            f.write(instruction_text + part_content) 
         saved_files.append(part_path)
     
     return saved_files
@@ -197,3 +265,7 @@ def print_analysis_stats(stats: dict):
     print(f"분석 파일 수: {stats['total_files']}")
     print(f"함수 수: {stats['total_funcs']}")
     print(f"ENUM 사용 총 횟수: {stats['total_enums']}\n")
+
+if __name__ == '__main__':
+    # 이 파일이 직접 실행될 때의 테스트 코드 (필요시 작성)
+    pass

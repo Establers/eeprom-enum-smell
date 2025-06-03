@@ -67,7 +67,7 @@ def main(progress_callback=None):
     argp.add_argument('--encoding', default='utf-8', help='소스 파일 인코딩 (기본값: utf-8)')
     argp.add_argument('--debug', action='store_true', help='디버그 정보 출력')
     argp.add_argument('--query', action='store_true', help='쿼리 기반 방식 사용(실험적)')
-    argp.add_argument('--target-lines', type=int, help='프롬프트 분할 시 파일당 목표 줄 수')
+    argp.add_argument('--target-lines', type=str, default=None, help='프롬프트 분할 시 파일당 목표 줄 수 (숫자) 또는 "caller" 모드 지정')
     argp.add_argument('--csv', action='store_true', help='분석 결과를 CSV 파일로도 저장')
     argp.add_argument('--include-headers', action='store_true', help='헤더 파일(.h)도 분석에 포함')
     argp.add_argument('--find-caller', action='store_true', default=False, help='호출자 함수 분석 기능 사용 (기본값: 비활성화)')
@@ -90,7 +90,7 @@ def main(progress_callback=None):
     print(f"총 {len(c_files)}개의 {'C/H' if args.include_headers else 'C'} 파일을 찾았습니다.")
 
     all_results = []
-    llm_prompts = []
+    llm_prompts_data = []
     
     total_files = len(c_files)
     for i, cfile in enumerate(c_files, 1):
@@ -126,11 +126,11 @@ def main(progress_callback=None):
             all_results.append(r)
             if args.debug:
                 print(f"함수명 추출 결과: {r['func_name']}")
-            prompt = make_llm_prompt(
+            prompt_text = make_llm_prompt(
                 r['file'], r['func_name'], args.enum, args.from_value, args.to_value, r['code'],
                 callers=r.get('callers')
             )
-            llm_prompts.append(prompt)
+            llm_prompts_data.append({'text': prompt_text, 'has_callers': bool(r.get('callers'))})
 
     if not all_results:
         log_error(f"[Warning] ENUM '{args.enum}'을(를) 사용하는 함수를 찾을 수 없습니다.")
@@ -167,25 +167,63 @@ def main(progress_callback=None):
         now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         base_prompt_path = os.path.join(output_dir, f"{args.enum}_LLM_Prompts_{now}.txt")
         
-        # 모든 프롬프트를 하나의 문자열로 결합
-        separator = '\n' + '-' * 12 + '\n'
-        combined_prompts = separator.join(llm_prompts)
-        if combined_prompts:  # 프롬프트가 있는 경우에만 구분자 추가
-            combined_prompts = separator + combined_prompts + separator
+        parsed_split_mode = "lines" # 기본 분할 모드
+        parsed_target_lines_for_regular = None
+
+        if args.target_lines:
+            val_lower = args.target_lines.lower()
+            if val_lower.startswith("caller"):
+                if args.find_caller:
+                    parsed_split_mode = "caller"
+                    parts = val_lower.split(':', 1)
+                    if len(parts) > 1 and parts[1].isdigit():
+                        num = int(parts[1])
+                        if num > 0:
+                            parsed_target_lines_for_regular = num
+                        else:
+                            log_error(f'[Warning] "--target-lines caller:N"에서 N은 양의 정수여야 합니다. (입력: {args.target_lines}). 호출자 없는 파일은 분할하지 않습니다.')
+                            # parsed_target_lines_for_regular is None (분할 안함)
+                    # "caller"만 입력된 경우, parsed_target_lines_for_regular는 None (호출자 없는 파일 분할 안함)
+                else:
+                    log_error(f'[Warning] "--target-lines {args.target_lines}" 옵션은 "--find-caller" 옵션과 함께 사용해야 합니다. 기본 분할 없음으로 진행합니다.')
+                    # parsed_split_mode = "lines", parsed_target_lines_for_regular = None (분할 안 함)
+            else:
+                try:
+                    num_val = int(args.target_lines)
+                    if num_val > 0:
+                        parsed_target_lines_for_regular = num_val
+                    else:
+                        log_error("[Warning] '--target-lines' 값은 양의 정수여야 합니다. 기본 라인 분할 없음으로 진행합니다.")
+                        # parsed_target_lines_for_regular is None (분할 안 함)
+                except ValueError:
+                    log_error(f'[Warning] "--target-lines" 값 "{args.target_lines}"이(가) 유효한 숫자나 "caller" 또는 "caller:N" 형식이 아닙니다. 기본 분할 없음으로 진행합니다.')
+                    # parsed_split_mode = "lines", parsed_target_lines_for_regular = None (분할 안 함)
         
         # 프롬프트 분할 저장
-        prompt_files = save_split_prompts(combined_prompts, base_prompt_path, args.target_lines)
+        prompt_files = save_split_prompts(
+            prompts_data_list=llm_prompts_data, 
+            base_path=base_prompt_path, 
+            split_mode=parsed_split_mode, 
+            target_lines_for_regular_files=parsed_target_lines_for_regular,
+            find_caller_active=args.find_caller
+        )
     except Exception as e:
         log_error(f"[Error] 프롬프트 파일 생성 실패 → {str(e)}")
         return [], error_logs
 
     # 결과 출력
-    if len(prompt_files) > 1:
-        print(f"프롬프트가 {len(prompt_files)}개 파일로 분할되어 저장되었습니다:")
-        for f in prompt_files:
-            print(f"- {f}")
+    if prompt_files:
+        if len(prompt_files) > 1:
+            print(f"프롬프트가 {len(prompt_files)}개 파일로 분할되어 저장되었습니다:")
+            for f_path in prompt_files: # 변수명 변경
+                print(f"- {f_path}")
+        else:
+            print(f"프롬프트 파일이 생성되었습니다: {prompt_files[0]}")
     else:
-        print(f"프롬프트 파일이 생성되었습니다: {prompt_files[0]}")
+        # llm_prompts_data는 있지만 파일이 생성 안된 경우 (예: 모든 프롬프트가 비어있거나 오류로 저장 실패)
+        if llm_prompts_data:
+            print("프롬프트 내용이 있었으나 파일로 저장되지 못했습니다. 에러 로그를 확인해주세요.")
+        # else: all_results 자체가 없어서 llm_prompts_data도 비어있는 경우는 이미 위에서 처리됨
 
     elapsed = time.time() - start_time
     update_progress(f"분석 완료! (총 {elapsed:.1f}초)", 100)
