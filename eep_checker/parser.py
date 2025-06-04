@@ -1,6 +1,7 @@
 import hashlib # 해시 라이브러리 추가
 from tree_sitter_languages import get_language, get_parser
 from tree_sitter import Language, Parser
+from utils import remove_preprocessor_directives # 추가된 import
 
 c_lang = get_language('c')
 parser = get_parser('c')
@@ -379,11 +380,20 @@ def debug_print_tree(node, code, depth=0):
         debug_print_tree(child_node, code, depth + 1)
 
 def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=False, query_mode=False, analyze_callers=False):
-    code_bytes = bytes(code, "utf8")
+    # 전처리기 지시문 제거
+    cleaned_code = remove_preprocessor_directives(code)
+    
+    if debug:
+        print("\n--- Original Code ---")
+        print(code[:500]) # 처음 500자만 출력
+        print("\n--- Cleaned Code (after preprocessor removal) ---")
+        print(cleaned_code[:500]) # 처음 500자만 출력
+        
+    code_bytes = bytes(cleaned_code, "utf8") # 수정된 코드로 바이트 변환
     tree = parser.parse(code_bytes)
 
     if debug:
-        print("\nParsed tree structure:")
+        print("\nParsed tree structure (from cleaned code):")
         debug_print_tree(tree.root_node, code_bytes)
         print("\nSearching for functions...")
 
@@ -392,7 +402,13 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
     unique_results = []
     seen_results_hashes = set() # 해시를 저장할 set
     for r in results:
-        code_str = r.get('code', '')
+        # 주의: r['code']는 전처리된 코드의 일부일 수 있음.
+        # 원본 코드에서 위치를 찾으려면, 전처리된 코드와 원본 코드 간의 매핑이 필요하나,
+        # 여기서는 단순화를 위해 전처리된 코드를 기준으로 결과를 생성.
+        # 또는, r['code']를 원본 코드에서 다시 추출하는 방법도 고려할 수 있으나 복잡도 증가.
+        # 현재는 전처리된 코드를 그대로 사용.
+        code_str = r.get('code', '') 
+        
         # 코드 문자열을 UTF-8로 인코딩하여 해시 생성
         code_hash = hashlib.md5(code_str.encode('utf-8')).hexdigest()
         
@@ -400,16 +416,18 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         identifier_tuple = (r.get('func_name'), code_hash, r.get('enum_count'))
         
         if identifier_tuple not in seen_results_hashes:
-            # 라인 번호 계산
-            lines = code.split('\n')
-            start_pos = code.find(code_str)
+            # 라인 번호 계산 (cleaned_code 기준)
+            # 원본 코드의 라인 번호와 달라질 수 있음에 유의
+            lines = cleaned_code.split('\n')
+            start_pos = cleaned_code.find(code_str) # cleaned_code에서 찾아야 함
             if start_pos != -1:
-                start_line = code[:start_pos].count('\n') + 1
+                start_line = cleaned_code[:start_pos].count('\n') + 1
                 end_line = start_line + code_str.count('\n')
                 r['start_line'] = start_line
                 r['end_line'] = end_line
             else:
-                r['start_line'] = 0
+                # 만약 못찾는 경우 (이론상 발생하면 안됨), 0으로 설정
+                r['start_line'] = 0 
                 r['end_line'] = 0
             
             unique_results.append(r)
