@@ -100,7 +100,8 @@ def main(progress_callback=None):
         
         # 파일 읽기 시도 (지정된 인코딩 사용)
         try:
-            with open(cfile, 'r', encoding=args.encoding, errors='strict') as f:
+            # with open(cfile, 'r', encoding=args.encoding, errors='strict') as f:
+            with open(cfile, 'r', encoding=args.encoding, errors='replace') as f:
                 code = f.read()
         except UnicodeDecodeError as e:
             log_error(f"[Error] 파일 읽기 실패 ({args.encoding} 인코딩): {rel_path} → {str(e)}")
