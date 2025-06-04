@@ -1,4 +1,5 @@
 import os
+import re # 정규 표현식 모듈 추가
 
 def find_c_files(root_dir, include_headers=False):
     """
@@ -265,6 +266,21 @@ def print_analysis_stats(stats: dict):
     print(f"분석 파일 수: {stats['total_files']}")
     print(f"함수 수: {stats['total_funcs']}")
     print(f"ENUM 사용 총 횟수: {stats['total_enums']}\n")
+
+def remove_preprocessor_directives(code_content: str) -> str:
+    """
+    C 코드 내용에서 주요 전처리기 지시문 라인을 제거합니다.
+    (#if, #ifdef, #ifndef, #else, #elif, #endif)
+    해당 라인을 빈 줄로 만듭니다.
+    """
+    # 전처리기 지시문을 찾는 정규 표현식
+    # ^\s*#\s*(if|ifdef|ifndef|else|elif|endif).*
+    # 라인 시작(^) 0개 이상 공백(\s*) # 0개 이상 공백(\s*) (키워드 그룹) 나머지 문자들(.*)
+    preprocessor_pattern = re.compile(r"^\s*#\s*(if|ifdef|ifndef|else|elif|endif).*", re.MULTILINE)
+    
+    # 매칭되는 라인을 빈 문자열로 대체
+    cleaned_code = preprocessor_pattern.sub("", code_content)
+    return cleaned_code
 
 if __name__ == '__main__':
     # 이 파일이 직접 실행될 때의 테스트 코드 (필요시 작성)
