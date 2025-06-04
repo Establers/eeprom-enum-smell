@@ -1,6 +1,6 @@
 # 주요 라이브러리
 PySide6==6.9.0
 tree-sitter==0.21.3
-tree-sitter-languages==1.10.2
+tree-sitter-languages
 # tree_sitter_language_pack
 pyinstaller==6.13.0
