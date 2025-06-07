@@ -177,7 +177,10 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
     2) 함수 정의, struct 정의, declaration 노드에서
        (a) target_enum 직접 사용 or
        (b) enum_vars 중 하나라도 사용되는 경우
-       결과 리스트에 포함
+       결과 리스트에 포함한다.
+
+    context_lines 값이 주어지면, ENUM 사용 라인을 중심으로 해당 줄수만큼
+    앞뒤 맥락을 포함한다. 호출자 함수 정보에도 동일하게 적용된다.
     """
     if enum_vars is None:
         if node.type == 'translation_unit':
@@ -336,18 +339,31 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                         if called_func_name == target_func_name and current_enclosing_func_name and current_enclosing_func_name != target_func_name: # 자기 자신 호출은 제외
                             # 호출자 정보가 all_function_definitions에 있는지 확인
                             if current_enclosing_func_name in all_function_definitions:
-                                caller_info_def = all_function_definitions[current_enclosing_func_name] # 변수명 변경
+                                caller_info_def = all_function_definitions[current_enclosing_func_name]
                                 call_line = code.count(b'\n', 0, func_identifier_node.start_byte) + 1
-                                
-                                # 중복 호출자 방지 (호출 함수 이름 기준)
+
+                                snippet_code = caller_info_def['code']
+                                snippet_start = caller_info_def['start_line']
+                                snippet_end = caller_info_def['end_line']
+
+                                if context_lines is not None:
+                                    min_line = max(caller_info_def['start_line'], call_line - context_lines)
+                                    max_line = min(caller_info_def['end_line'], call_line + context_lines)
+                                    rel_start = max(0, min_line - caller_info_def['start_line'])
+                                    rel_end = max(0, max_line - caller_info_def['start_line'])
+                                    lines_list = caller_info_def['code'].splitlines()
+                                    snippet_code = "\n".join(lines_list[rel_start : rel_end + 1])
+                                    snippet_start = min_line
+                                    snippet_end = max_line
+
                                 existing_caller_names = [c['func_name'] for c in callers_found]
                                 if current_enclosing_func_name not in existing_caller_names:
                                     callers_found.append({
                                         'func_name': current_enclosing_func_name,
-                                        'code': caller_info_def['code'], # 수정된 변수명 사용
-                                        'start_line': caller_info_def['start_line'], # 수정된 변수명 사용
-                                        'end_line': caller_info_def['end_line'], # 수정된 변수명 사용
-                                        'call_line': call_line # 최초 발견된 호출 라인
+                                        'code': snippet_code,
+                                        'start_line': snippet_start,
+                                        'end_line': snippet_end,
+                                        'call_line': call_line
                                     })
                                     if debug:
                                         print(f"[DEBUG] Caller found: {current_enclosing_func_name} calls {target_func_name} at line {call_line}")
