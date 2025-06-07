@@ -1059,6 +1059,9 @@ AX DX 하자면서 API 하나 안줘~!
             self.update_status_bar() # 최종 상태 반영
 
 def main():
+    if sys.platform.startswith("win"):
+        # Disable Qt dark mode on Windows so text colors stay visible
+        os.environ.setdefault("QT_QPA_PLATFORM", "windows:darkmode=0")
     app = QApplication(sys.argv)
     
     # 전역 폰트 설정
