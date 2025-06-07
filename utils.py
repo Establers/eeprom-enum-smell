@@ -18,8 +18,10 @@ def find_c_files(root_dir, include_headers=False):
     # 시스템 경로 검증
     root_dir = os.path.normpath(root_dir)
     
-    # 실제 루트 디렉토리인지 확인
-    if root_dir.rstrip('\\') in [chr(d) + ':' for d in range(ord('C'), ord('G')+1)]:
+    # 실제 루트 디렉토리인지 확인 (윈도우 드라이브 루트 또는 POSIX 루트)
+    is_windows_root = root_dir.rstrip('\\') in [f"{chr(d)}:" for d in range(ord('C'), ord('G') + 1)]
+    is_posix_root = os.path.abspath(root_dir) == os.path.abspath(os.sep)
+    if is_windows_root or is_posix_root:
         raise ValueError("시스템 루트\n디렉터리 불가")
     
     c_files = []
