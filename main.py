@@ -68,6 +68,7 @@ def main(progress_callback=None):
     argp.add_argument('--debug', action='store_true', help='디버그 정보 출력')
     argp.add_argument('--query', action='store_true', help='쿼리 기반 방식 사용(실험적)')
     argp.add_argument('--target-lines', type=str, default=None, help='프롬프트 분할 시 파일당 목표 줄 수 (숫자) 또는 "caller" 모드 지정')
+    argp.add_argument('--context-lines', type=int, default=None, help='ENUM 사용 전후 포함할 줄 수 (기본: 전체 함수)')
     argp.add_argument('--csv', action='store_true', help='분석 결과를 CSV 파일로도 저장')
     argp.add_argument('--include-headers', action='store_true', help='헤더 파일(.h)도 분석에 포함')
     argp.add_argument('--find-caller', action='store_true', default=False, help='호출자 함수 분석 기능 사용 (기본값: 비활성화)')
@@ -113,11 +114,13 @@ def main(progress_callback=None):
         # 파싱 시도
         try:
             parser_results = parser.extract_functions_with_enum_file(
-                code, args.enum, 
+                code,
+                args.enum,
                 file_name=rel_path,
                 debug=args.debug,
                 query_mode=args.query,
-                analyze_callers=args.find_caller
+                analyze_callers=args.find_caller,
+                context_lines=args.context_lines,
             )
         except Exception as e:
             log_error(f"[Warning] 파일 파싱 실패: {rel_path} → {str(e)}")
