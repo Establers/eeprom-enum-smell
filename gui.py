@@ -609,8 +609,8 @@ class EEPCheckerGUI(QMainWindow):
                 "ENUM 주변 줄 수 설정",
                 "ENUM 사용 전후 포함할 줄 수",
                 value=self.context_lines if self.context_lines is not None else 5,
-                min=0,
-                max=100,
+                minValue=0,
+                maxValue=100,
             )
             if ok:
                 self.context_lines = val
