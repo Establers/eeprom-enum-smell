@@ -170,7 +170,7 @@ def debug_print_function_node(node, code, depth=0, debug=False):
         if not is_field_child:
             debug_print_function_node(child_node, code, depth + 1, debug=debug)
 
-def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False, analyze_callers=False):
+def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False, analyze_callers=False, context_lines=None):
     """
     AST의 node를 재귀 탐색하면서,
     1) 전역에서 enum을 쓰는 변수들(enum_vars) 수집 (최상위 호출 시)
@@ -245,26 +245,51 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
         # 4) "직접 enum 사용"이나 "enum_vars 통해 사용" 중 하나라도 있으면 결과에 추가
         #    단, name이 None인 경우(== 함수 내부 선언이었다면)에는 추가하지 않음
         if (found_direct or found_via_var) and name:
-            node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
-            # 시작/끝 라인 계산
-            start_line = code.count(b'\n', 0, node.start_byte) + 1
-            end_line = start_line + node_code.count('\n')
-            
+            node_code = code[node.start_byte:node.end_byte].decode(errors="ignore")
+            start_line = code.count(b"\n", 0, node.start_byte) + 1
+            end_line = start_line + node_code.count("\n")
+
+            snippet_code = node_code
+            snippet_start = start_line
+            snippet_end = end_line
+
+            if context_lines is not None and enum_lines:
+                min_line = max(start_line, min(enum_lines) - context_lines)
+                max_line = min(end_line, max(enum_lines) + context_lines)
+                rel_start = max(0, min_line - start_line)
+                rel_end = max(0, max_line - start_line)
+                lines = node_code.splitlines()
+                snippet_code = "\n".join(lines[rel_start : rel_end + 1])
+                snippet_start = min_line
+                snippet_end = max_line
+
             results.append({
-                'func_name': name,
-                'code': node_code,
-                'enum_count': enum_count_direct,
-                'start_line': start_line,
-                'end_line': end_line,
-                'enum_lines': enum_lines,  # ENUM이 사용된 라인 번호들 추가
-                'callers': [] # 호출자 정보를 저장할 리스트 초기화
+                "func_name": name,
+                "code": snippet_code,
+                "enum_count": enum_count_direct,
+                "start_line": snippet_start,
+                "end_line": snippet_end,
+                "enum_lines": enum_lines,
+                "callers": [],
             })
             if debug:
-                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}")
+                print(
+                    f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}"
+                )
 
     # 5) 하위 노드 재귀 호출 (enum_vars를 그대로 넘겨줌)
     for child_node in node.children:
-        results.extend(extract_functions_with_enum(child_node, code, target_enum, enum_vars, debug=debug, analyze_callers=analyze_callers))
+        results.extend(
+            extract_functions_with_enum(
+                child_node,
+                code,
+                target_enum,
+                enum_vars,
+                debug=debug,
+                analyze_callers=analyze_callers,
+                context_lines=context_lines,
+            )
+        )
 
     # 함수 호출 관계 분석 (extract_functions_with_enum이 translation_unit에서 처음 호출될 때 한 번만 실행)
     if node.type == 'translation_unit' and results and analyze_callers:
@@ -379,7 +404,15 @@ def debug_print_tree(node, code, depth=0):
     for child_node in node.children: # 변수명 변경 child -> child_node
         debug_print_tree(child_node, code, depth + 1)
 
-def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=False, query_mode=False, analyze_callers=False):
+def extract_functions_with_enum_file(
+    code,
+    target_enum,
+    file_name=None,
+    debug=False,
+    query_mode=False,
+    analyze_callers=False,
+    context_lines=None,
+):
     # 전처리기 지시문 제거
     cleaned_code = remove_preprocessor_directives(code)
     
@@ -397,7 +430,15 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         debug_print_tree(tree.root_node, code_bytes)
         print("\nSearching for functions...")
 
-    results = extract_functions_with_enum(tree.root_node, code_bytes, target_enum, enum_vars=None, debug=debug, analyze_callers=analyze_callers)
+    results = extract_functions_with_enum(
+        tree.root_node,
+        code_bytes,
+        target_enum,
+        enum_vars=None,
+        debug=debug,
+        analyze_callers=analyze_callers,
+        context_lines=context_lines,
+    )
 
     unique_results = []
     seen_results_hashes = set() # 해시를 저장할 set

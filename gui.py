@@ -57,10 +57,11 @@ class AnalyzerThread(QThread):
     finished = Signal(list, list)
     error = Signal(str)
 
-    def __init__(self, args, target_lines_cli_param, encoding):
+    def __init__(self, args, target_lines_cli_param, context_lines_param, encoding):
         super().__init__()
         self.args = args
         self.target_lines_cli_param = target_lines_cli_param
+        self.context_lines_param = context_lines_param
         self.encoding = encoding
 
     def run(self):
@@ -76,6 +77,9 @@ class AnalyzerThread(QThread):
             
             if self.target_lines_cli_param is not None:
                 sys.argv.extend(['--target-lines', str(self.target_lines_cli_param)])
+
+            if self.context_lines_param is not None:
+                sys.argv.extend(['--context-lines', str(self.context_lines_param)])
             
             if self.args.get('csv', False):
                 sys.argv.append('--csv')
@@ -116,6 +120,7 @@ class EEPCheckerGUI(QMainWindow):
         # 호출자 분석 옵션 상태 추가
         self.include_headers_enabled = False
         self.find_caller_enabled = False
+        self.context_lines = None
         
         # 메뉴바 생성
         menubar = self.menuBar()
@@ -147,6 +152,11 @@ class EEPCheckerGUI(QMainWindow):
         self.find_caller_action = QAction('호출자 함수 분석', self, checkable=True, checked=self.find_caller_enabled)
         self.find_caller_action.triggered.connect(self.toggle_find_caller)
         output_menu.addAction(self.find_caller_action)
+
+        # ENUM 주변 줄 수 설정 액션
+        self.context_lines_action = QAction('ENUM 주변 줄 수 설정', self, checkable=True)
+        self.context_lines_action.triggered.connect(self.set_context_lines)
+        output_menu.addAction(self.context_lines_action)
         
         # 인코딩 설정 메뉴 추가
         encoding_menu = file_menu.addMenu('소스코드 인코딩')
@@ -418,6 +428,7 @@ class EEPCheckerGUI(QMainWindow):
         self._easter_egg_count = 0
         self._last_open_click_time = 0
 
+        self.context_lines_action.setChecked(False)
         self.update_status_bar() # 초기 상태바 업데이트
 
     def set_encoding(self):
@@ -590,6 +601,26 @@ class EEPCheckerGUI(QMainWindow):
                 except:
                     self.target_lines_config = self.lines_for_regular_prompts_in_caller_mode
         self.update_status_bar()
+
+    def set_context_lines(self, checked):
+        if checked:
+            val, ok = QInputDialog.getInt(
+                self,
+                "ENUM 주변 줄 수 설정",
+                "ENUM 사용 전후 포함할 줄 수",
+                value=self.context_lines if self.context_lines is not None else 5,
+                minValue=0,
+                maxValue=100,
+            )
+            if ok:
+                self.context_lines = val
+                self.context_lines_action.setChecked(True)
+            else:
+                self.context_lines_action.setChecked(False)
+                self.context_lines = None
+        else:
+            self.context_lines = None
+        self.update_status_bar()
         
     def update_status_bar(self):
         status_parts = []
@@ -613,7 +644,10 @@ class EEPCheckerGUI(QMainWindow):
             elif isinstance(self.target_lines_config, int):
                 split_status = f"{self.target_lines_config}줄"
         status_parts.append(f"프롬프트 분할: {split_status}")
-        
+
+        context_status = "함수 전체" if self.context_lines is None else f"±{self.context_lines}줄"
+        status_parts.append(f"범위: {context_status}")
+
         self.status_label.setText(" | ".join(status_parts))
 
     def analyze(self):
@@ -678,6 +712,7 @@ class EEPCheckerGUI(QMainWindow):
                 'find_caller': self.find_caller_enabled
             },
             target_lines_cli_param=self.target_lines_config,
+            context_lines_param=self.context_lines,
             encoding=self.current_encoding
         )
         
@@ -806,6 +841,7 @@ AX DX 하자면서 API 하나 안줘~!
                     if 'target_lines_config' not in item: item['target_lines_config'] = None
                     if 'lines_for_regular_prompts_in_caller_mode' not in item: item['lines_for_regular_prompts_in_caller_mode'] = 2000
                     if 'split_settings_action_checked' not in item: item['split_settings_action_checked'] = item.get('target_lines_config') is not None
+                    if 'context_lines' not in item: item['context_lines'] = None
                 return items
         except Exception:
             pass
@@ -835,7 +871,8 @@ AX DX 하자면서 API 하나 안줘~!
             'target_lines_config': self.target_lines_config,
             'split_by_caller_mode_active': self.split_by_caller_mode_active,
             'lines_for_regular_prompts_in_caller_mode': self.lines_for_regular_prompts_in_caller_mode,
-            'split_settings_action_checked': self.split_settings_action.isChecked()
+            'split_settings_action_checked': self.split_settings_action.isChecked(),
+            'context_lines': self.context_lines,
         }
         
         # 동일한 항목이 있으면 제거
@@ -913,6 +950,9 @@ AX DX 하자면서 API 하나 안줘~!
         self.split_by_caller_mode_active = item.get('split_by_caller_mode_active', False)
         self.target_lines_config = item.get('target_lines_config', None)
         self.lines_for_regular_prompts_in_caller_mode = item.get('lines_for_regular_prompts_in_caller_mode', 2000)
+
+        self.context_lines = item.get('context_lines', None)
+        self.context_lines_action.setChecked(self.context_lines is not None)
 
         # split_settings_action 체크 상태 결정
         self.split_settings_action.setChecked(item.get('split_settings_action_checked', self.target_lines_config is not None))
