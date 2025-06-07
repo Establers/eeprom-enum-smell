@@ -170,7 +170,7 @@ def debug_print_function_node(node, code, depth=0, debug=False):
         if not is_field_child:
             debug_print_function_node(child_node, code, depth + 1, debug=debug)
 
-def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False, analyze_callers=False):
+def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=False, analyze_callers=False, context_lines=None):
     """
     AST의 node를 재귀 탐색하면서,
     1) 전역에서 enum을 쓰는 변수들(enum_vars) 수집 (최상위 호출 시)
@@ -245,26 +245,51 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
         # 4) "직접 enum 사용"이나 "enum_vars 통해 사용" 중 하나라도 있으면 결과에 추가
         #    단, name이 None인 경우(== 함수 내부 선언이었다면)에는 추가하지 않음
         if (found_direct or found_via_var) and name:
-            node_code = code[node.start_byte:node.end_byte].decode(errors='ignore')
-            # 시작/끝 라인 계산
-            start_line = code.count(b'\n', 0, node.start_byte) + 1
-            end_line = start_line + node_code.count('\n')
-            
+            node_code = code[node.start_byte:node.end_byte].decode(errors="ignore")
+            start_line = code.count(b"\n", 0, node.start_byte) + 1
+            end_line = start_line + node_code.count("\n")
+
+            snippet_code = node_code
+            snippet_start = start_line
+            snippet_end = end_line
+
+            if context_lines is not None and enum_lines:
+                min_line = max(start_line, min(enum_lines) - context_lines)
+                max_line = min(end_line, max(enum_lines) + context_lines)
+                rel_start = max(0, min_line - start_line)
+                rel_end = max(0, max_line - start_line)
+                lines = node_code.splitlines()
+                snippet_code = "\n".join(lines[rel_start : rel_end + 1])
+                snippet_start = min_line
+                snippet_end = max_line
+
             results.append({
-                'func_name': name,
-                'code': node_code,
-                'enum_count': enum_count_direct,
-                'start_line': start_line,
-                'end_line': end_line,
-                'enum_lines': enum_lines,  # ENUM이 사용된 라인 번호들 추가
-                'callers': [] # 호출자 정보를 저장할 리스트 초기화
+                "func_name": name,
+                "code": snippet_code,
+                "enum_count": enum_count_direct,
+                "start_line": snippet_start,
+                "end_line": snippet_end,
+                "enum_lines": enum_lines,
+                "callers": [],
             })
             if debug:
-                print(f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}")
+                print(
+                    f"[DEBUG] 포함됨: {name}, direct={enum_count_direct}, via_var={found_via_var}, enum_vars={enum_vars}, lines={enum_lines}"
+                )
 
     # 5) 하위 노드 재귀 호출 (enum_vars를 그대로 넘겨줌)
     for child_node in node.children:
-        results.extend(extract_functions_with_enum(child_node, code, target_enum, enum_vars, debug=debug, analyze_callers=analyze_callers))
+        results.extend(
+            extract_functions_with_enum(
+                child_node,
+                code,
+                target_enum,
+                enum_vars,
+                debug=debug,
+                analyze_callers=analyze_callers,
+                context_lines=context_lines,
+            )
+        )
 
     # 함수 호출 관계 분석 (extract_functions_with_enum이 translation_unit에서 처음 호출될 때 한 번만 실행)
     if node.type == 'translation_unit' and results and analyze_callers:
@@ -311,18 +336,31 @@ def extract_functions_with_enum(node, code, target_enum, enum_vars=None, debug=F
                         if called_func_name == target_func_name and current_enclosing_func_name and current_enclosing_func_name != target_func_name: # 자기 자신 호출은 제외
                             # 호출자 정보가 all_function_definitions에 있는지 확인
                             if current_enclosing_func_name in all_function_definitions:
-                                caller_info_def = all_function_definitions[current_enclosing_func_name] # 변수명 변경
+                                caller_info_def = all_function_definitions[current_enclosing_func_name]
                                 call_line = code.count(b'\n', 0, func_identifier_node.start_byte) + 1
-                                
-                                # 중복 호출자 방지 (호출 함수 이름 기준)
+
+                                snippet_code = caller_info_def['code']
+                                snippet_start = caller_info_def['start_line']
+                                snippet_end = caller_info_def['end_line']
+
+                                if context_lines is not None:
+                                    min_line = max(snippet_start, call_line - context_lines)
+                                    max_line = min(snippet_end, call_line + context_lines)
+                                    lines = snippet_code.splitlines()
+                                    rel_start = max(0, min_line - snippet_start)
+                                    rel_end = max(0, max_line - snippet_start)
+                                    snippet_code = "\n".join(lines[rel_start : rel_end + 1])
+                                    snippet_start = min_line
+                                    snippet_end = max_line
+
                                 existing_caller_names = [c['func_name'] for c in callers_found]
                                 if current_enclosing_func_name not in existing_caller_names:
                                     callers_found.append({
                                         'func_name': current_enclosing_func_name,
-                                        'code': caller_info_def['code'], # 수정된 변수명 사용
-                                        'start_line': caller_info_def['start_line'], # 수정된 변수명 사용
-                                        'end_line': caller_info_def['end_line'], # 수정된 변수명 사용
-                                        'call_line': call_line # 최초 발견된 호출 라인
+                                        'code': snippet_code,
+                                        'start_line': snippet_start,
+                                        'end_line': snippet_end,
+                                        'call_line': call_line
                                     })
                                     if debug:
                                         print(f"[DEBUG] Caller found: {current_enclosing_func_name} calls {target_func_name} at line {call_line}")
@@ -379,7 +417,15 @@ def debug_print_tree(node, code, depth=0):
     for child_node in node.children: # 변수명 변경 child -> child_node
         debug_print_tree(child_node, code, depth + 1)
 
-def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=False, query_mode=False, analyze_callers=False):
+def extract_functions_with_enum_file(
+    code,
+    target_enum,
+    file_name=None,
+    debug=False,
+    query_mode=False,
+    analyze_callers=False,
+    context_lines=None,
+):
     # 전처리기 지시문 제거
     cleaned_code = remove_preprocessor_directives(code)
     
@@ -397,7 +443,15 @@ def extract_functions_with_enum_file(code, target_enum, file_name=None, debug=Fa
         debug_print_tree(tree.root_node, code_bytes)
         print("\nSearching for functions...")
 
-    results = extract_functions_with_enum(tree.root_node, code_bytes, target_enum, enum_vars=None, debug=debug, analyze_callers=analyze_callers)
+    results = extract_functions_with_enum(
+        tree.root_node,
+        code_bytes,
+        target_enum,
+        enum_vars=None,
+        debug=debug,
+        analyze_callers=analyze_callers,
+        context_lines=context_lines,
+    )
 
     unique_results = []
     seen_results_hashes = set() # 해시를 저장할 set
